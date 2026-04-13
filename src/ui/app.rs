@@ -76,7 +76,10 @@ impl App {
                 let active = self.tunnel_manager.active_count();
                 let status = if active > 0 {
                     let base = self.status_message.as_deref().unwrap_or("");
-                    let tunnel_msg = format!("{active} tunnel{} active", if active == 1 { "" } else { "s" });
+                    let tunnel_msg = format!(
+                        "{active} tunnel{} active",
+                        if active == 1 { "" } else { "s" }
+                    );
                     if base.is_empty() {
                         Some(tunnel_msg)
                     } else {

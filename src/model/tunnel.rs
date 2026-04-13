@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -66,16 +66,10 @@ impl Tunnel {
         match self.tunnel_type {
             TunnelType::Local | TunnelType::Remote => {
                 if self.remote_host.is_none() {
-                    bail!(
-                        "{} tunnel requires a remote host",
-                        self.tunnel_type.label()
-                    );
+                    bail!("{} tunnel requires a remote host", self.tunnel_type.label());
                 }
                 if self.remote_port.is_none() {
-                    bail!(
-                        "{} tunnel requires a remote port",
-                        self.tunnel_type.label()
-                    );
+                    bail!("{} tunnel requires a remote port", self.tunnel_type.label());
                 }
             }
             TunnelType::Dynamic => {}

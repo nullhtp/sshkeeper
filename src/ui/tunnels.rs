@@ -84,20 +84,15 @@ impl FormState {
         fields[F_LOCAL_PORT] = Input::default().with_value(tunnel.bind_port.to_string());
         fields[F_REMOTE_HOST] =
             Input::default().with_value(tunnel.remote_host.clone().unwrap_or_default());
-        fields[F_REMOTE_PORT] = Input::default().with_value(
-            tunnel
-                .remote_port
-                .map_or(String::new(), |p| p.to_string()),
-        );
+        fields[F_REMOTE_PORT] = Input::default()
+            .with_value(tunnel.remote_port.map_or(String::new(), |p| p.to_string()));
         fields[F_NAME] = Input::default().with_value(tunnel.name.clone());
         fields[F_TYPE] = Input::default().with_value(type_str.into());
-        fields[F_BIND_ADDR] = Input::default().with_value(
-            if tunnel.bind_address == "127.0.0.1" {
-                String::new()
-            } else {
-                tunnel.bind_address.clone()
-            },
-        );
+        fields[F_BIND_ADDR] = Input::default().with_value(if tunnel.bind_address == "127.0.0.1" {
+            String::new()
+        } else {
+            tunnel.bind_address.clone()
+        });
 
         Self {
             fields,
@@ -215,21 +210,18 @@ impl TunnelScreenState {
     fn render_list(&mut self, frame: &mut Frame, tunnel_manager: &mut TunnelManager) {
         let chunks = Layout::vertical([
             Constraint::Length(1), // title
-            Constraint::Min(1),   // table
+            Constraint::Min(1),    // table
             Constraint::Length(1), // help
         ])
         .split(frame.area());
 
         frame.render_widget(
-            Paragraph::new(format!(" Tunnels: {}", self.connection_name))
-                .style(theme::TITLE_STYLE),
+            Paragraph::new(format!(" Tunnels: {}", self.connection_name)).style(theme::TITLE_STYLE),
             chunks[0],
         );
 
         if self.tunnels.is_empty() {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .title(" Tunnels ");
+            let block = Block::default().borders(Borders::ALL).title(" Tunnels ");
             frame.render_widget(
                 Paragraph::new("No tunnels configured.\n\nPress 'a' to add a tunnel.")
                     .block(block)
@@ -340,8 +332,7 @@ impl TunnelScreenState {
             frame.render_widget(Paragraph::new(content).block(block), chunks[i + 1]);
         }
 
-        let help =
-            " Tab/↓: next | Shift+Tab/↑: prev | Enter: save | ESC: cancel — only port + host required";
+        let help = " Tab/↓: next | Shift+Tab/↑: prev | Enter: save | ESC: cancel — only port + host required";
         frame.render_widget(
             Paragraph::new(help).style(theme::HINT_STYLE),
             chunks[FIELD_COUNT + 2],
