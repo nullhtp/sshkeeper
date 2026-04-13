@@ -148,6 +148,15 @@ What would you like to do?
 - Pause on errors, blockers, or unclear requirements - don't guess
 - Use contextFiles from CLI output, don't assume specific file names
 
+**Code Quality Standards**
+- Follow **SOLID** principles: single responsibility, open/closed, Liskov substitution, interface segregation, dependency inversion
+- Apply **KISS**: prefer simple, straightforward solutions over clever or over-engineered ones
+- Apply **DRY**: extract shared logic only when duplication is real (3+ occurrences), not speculative
+- Write **clean code**: meaningful names, small focused functions, clear control flow, minimal nesting
+- Prefer composition over inheritance; favor explicit over implicit behavior
+- No dead code, no commented-out code, no TODO placeholders — implement fully or skip
+- Match existing project conventions (naming, structure, patterns) over personal preference
+
 **Fluid Workflow Integration**
 
 This skill supports the "actions on a change" model:

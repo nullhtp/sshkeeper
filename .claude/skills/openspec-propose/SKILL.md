@@ -105,6 +105,6 @@ After completing all artifacts, summarize:
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
 - Always read dependency artifacts before creating a new one
-- If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
+- **Proactively ask clarifying questions at ANY point** — before, during, or between artifact creation — whenever doing so would lead to a better result. Don't wait until you're stuck; ask early about ambiguities, trade-offs, scope boundaries, edge cases, and user preferences. The goal is to produce the best possible proposal, not to finish fastest.
 - If a change with that name already exists, ask if user wants to continue it or create a new one
 - Verify each artifact file exists after writing before proceeding to next
