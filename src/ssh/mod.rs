@@ -1,5 +1,6 @@
 mod system;
 pub mod key_setup;
+pub mod transfer;
 
 pub use system::SystemSshBackend;
 

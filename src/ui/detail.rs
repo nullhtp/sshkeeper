@@ -117,7 +117,7 @@ impl DetailState {
         let help = if self.confirm_delete {
             " Really delete? y: yes | n: cancel"
         } else {
-            " ESC: back | Enter: connect | e: edit | d: delete | K: setup key auth"
+            " ESC: back | Enter: connect | e: edit | d: delete | t: transfer | K: setup key auth"
         };
         frame.render_widget(
             Paragraph::new(help).style(theme::HINT_STYLE),
@@ -145,6 +145,7 @@ impl DetailState {
                 DetailAction::None
             }
             KeyCode::Char('K') => DetailAction::SetupKeyAuth(self.connection_id.clone()),
+            KeyCode::Char('t') => DetailAction::Transfer(self.connection_id.clone()),
             _ => DetailAction::None,
         }
     }

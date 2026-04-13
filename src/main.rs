@@ -4,7 +4,7 @@ mod storage;
 mod ui;
 
 use anyhow::Result;
-use storage::TomlStorage;
+use storage::{TomlStorage, TransferHistory};
 use ui::App;
 
 fn main() -> Result<()> {
@@ -17,9 +17,10 @@ fn main() -> Result<()> {
 
     let storage = TomlStorage::new()?;
     let connections = storage.load()?;
+    let transfer_history = TransferHistory::load()?;
 
     let mut terminal = ratatui::init();
-    let mut app = App::new(storage, connections);
+    let mut app = App::new(storage, connections, transfer_history);
     let result = app.run(&mut terminal);
     ratatui::restore();
 

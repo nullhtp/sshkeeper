@@ -1,6 +1,6 @@
 use crate::model::{Connection, ConnectionStore};
 use crate::ssh::{SshBackend, SystemSshBackend};
-use crate::storage::TomlStorage;
+use crate::storage::{TomlStorage, TransferHistory};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Frame;
@@ -9,16 +9,19 @@ use std::time::Duration;
 use super::browse::BrowseState;
 use super::detail::DetailState;
 use super::editor::{EditorState, EditorMode};
+use super::transfer::{TransferScreen, TransferAction};
 
 pub enum Screen {
     Browse(BrowseState),
     Detail(DetailState),
     Editor(EditorState),
+    Transfer { conn_id: String, state: TransferScreen },
 }
 
 pub struct App {
     pub store: ConnectionStore,
     pub storage: TomlStorage,
+    pub transfer_history: TransferHistory,
     pub screen: Screen,
     pub ssh_backend: SystemSshBackend,
     pub status_message: Option<String>,
@@ -26,10 +29,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(storage: TomlStorage, connections: Vec<Connection>) -> Self {
+    pub fn new(storage: TomlStorage, connections: Vec<Connection>, transfer_history: TransferHistory) -> Self {
         Self {
             store: ConnectionStore::new(connections),
             storage,
+            transfer_history,
             screen: Screen::Browse(BrowseState::new()),
             ssh_backend: SystemSshBackend,
             status_message: None,
@@ -54,6 +58,7 @@ impl App {
             Screen::Browse(state) => state.render(frame, &self.store, self.status_message.as_deref()),
             Screen::Detail(state) => state.render(frame, &self.store),
             Screen::Editor(state) => state.render(frame),
+            Screen::Transfer { state, .. } => state.render(frame),
         }
     }
 
@@ -104,6 +109,27 @@ impl App {
                     }
                     DetailAction::SetupKeyAuth(id) => {
                         self.do_setup_key_auth(&id, terminal)?;
+                    }
+                    DetailAction::Transfer(id) => {
+                        self.do_open_transfer(&id);
+                    }
+                }
+            }
+            Screen::Transfer { conn_id, state } => {
+                match state.handle_key(key) {
+                    TransferAction::None => {}
+                    TransferAction::Cancel => {
+                        let id = conn_id.clone();
+                        self.screen = Screen::Detail(DetailState::new(id));
+                    }
+                    TransferAction::Execute {
+                        local_path,
+                        remote_path,
+                        direction,
+                        recursive,
+                    } => {
+                        let id = conn_id.clone();
+                        self.do_transfer(&id, &local_path, &remote_path, direction, recursive, terminal)?;
                     }
                 }
             }
@@ -199,6 +225,93 @@ impl App {
         Ok(())
     }
 
+    fn do_open_transfer(&mut self, id: &str) {
+        if let Err(e) = crate::ssh::transfer::validate_scp() {
+            self.status_message = Some(e.to_string());
+            return;
+        }
+        let conn = match self.store.find_by_id(id) {
+            Some(c) => c.clone(),
+            None => return,
+        };
+        self.screen = Screen::Transfer {
+            conn_id: id.to_string(),
+            state: TransferScreen::new(conn),
+        };
+    }
+
+    fn do_transfer(
+        &mut self,
+        conn_id: &str,
+        local_path: &str,
+        remote_path: &str,
+        direction: crate::ssh::transfer::TransferDirection,
+        recursive: bool,
+        terminal: &mut ratatui::DefaultTerminal,
+    ) -> Result<()> {
+        let conn = match self.store.find_by_id(conn_id) {
+            Some(c) => c.clone(),
+            None => return Ok(()),
+        };
+
+        let mut cmd = crate::ssh::transfer::build_scp_command(
+            &conn,
+            local_path,
+            remote_path,
+            direction,
+            recursive,
+        );
+
+        let dir_label = match direction {
+            crate::ssh::transfer::TransferDirection::Upload => "Uploading",
+            crate::ssh::transfer::TransferDirection::Download => "Downloading",
+        };
+
+        // Suspend TUI
+        ratatui::restore();
+        println!("{}: {} ↔ {}:{}", dir_label, local_path, conn.host, remote_path);
+        println!();
+
+        let result = cmd.status();
+
+        // Resume TUI
+        *terminal = ratatui::init();
+
+        match result {
+            Ok(status) if status.success() => {
+                // Record in history
+                let entry = crate::storage::transfer_history::TransferEntry::new(
+                    direction,
+                    local_path.to_string(),
+                    remote_path.to_string(),
+                    recursive,
+                );
+                self.transfer_history.push(conn_id, entry);
+                let _ = self.transfer_history.save();
+
+                self.status_message = Some(format!("Transfer complete: {}", local_path));
+                self.screen = Screen::Detail(DetailState::new(conn_id.to_string()));
+            }
+            Ok(status) => {
+                let code = status.code().unwrap_or(-1);
+                self.status_message = Some(format!("Transfer failed (exit code {})", code));
+                // Stay on transfer screen — rebuild it
+                self.screen = Screen::Transfer {
+                    conn_id: conn_id.to_string(),
+                    state: TransferScreen::new(conn.clone()),
+                };
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Transfer error: {}", e));
+                self.screen = Screen::Transfer {
+                    conn_id: conn_id.to_string(),
+                    state: TransferScreen::new(conn.clone()),
+                };
+            }
+        }
+        Ok(())
+    }
+
     fn do_import(&mut self) {
         match crate::storage::import_ssh_config(self.store.all()) {
             Ok(result) => {
@@ -239,6 +352,7 @@ pub enum DetailAction {
     Edit(String),
     Delete(String),
     SetupKeyAuth(String),
+    Transfer(String),
 }
 
 pub enum EditorAction {
