@@ -6,11 +6,19 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use super::app::DetailAction;
+use super::quick_actions::{ActionListResult, ActionListState, ParamFormResult, ParamFormState};
 use super::theme;
+
+enum Overlay {
+    None,
+    ActionList(ActionListState),
+    ParamForm(ParamFormState),
+}
 
 pub struct DetailState {
     pub connection_id: String,
     pub confirm_delete: bool,
+    overlay: Overlay,
 }
 
 impl DetailState {
@@ -18,10 +26,11 @@ impl DetailState {
         Self {
             connection_id: id,
             confirm_delete: false,
+            overlay: Overlay::None,
         }
     }
 
-    pub fn render(&self, frame: &mut Frame, store: &ConnectionStore) {
+    pub fn render(&mut self, frame: &mut Frame, store: &ConnectionStore) {
         let conn = match store.find_by_id(&self.connection_id) {
             Some(c) => c,
             None => {
@@ -117,15 +126,71 @@ impl DetailState {
         let help = if self.confirm_delete {
             " Really delete? y: yes | n: cancel"
         } else {
-            " ESC: back | Enter: connect | e: edit | d: delete | t: transfer | K: setup key auth"
+            " ESC: back | Enter: connect | e: edit | d: delete | t: transfer | K: setup key auth | a: actions"
         };
         frame.render_widget(
             Paragraph::new(help).style(theme::HINT_STYLE),
             chunks[3],
         );
+
+        // Render overlay on top
+        match &mut self.overlay {
+            Overlay::None => {}
+            Overlay::ActionList(state) => state.render(frame),
+            Overlay::ParamForm(state) => state.render(frame),
+        }
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> DetailAction {
+    pub fn handle_key(&mut self, key: KeyEvent, store: &ConnectionStore) -> DetailAction {
+        // Delegate to overlay if active
+        match &mut self.overlay {
+            Overlay::ActionList(state) => {
+                return match state.handle_key(key) {
+                    ActionListResult::None => DetailAction::None,
+                    ActionListResult::Dismiss => {
+                        self.overlay = Overlay::None;
+                        DetailAction::None
+                    }
+                    ActionListResult::Selected(action) => {
+                        if action.has_params() || action.confirm_message.is_some() {
+                            // Open param form
+                            if let Some(conn) = store.find_by_id(&self.connection_id) {
+                                self.overlay =
+                                    Overlay::ParamForm(ParamFormState::new(action, conn));
+                            }
+                            DetailAction::None
+                        } else {
+                            // Execute immediately
+                            self.overlay = Overlay::None;
+                            let cmd = action.build_command(&[]);
+                            DetailAction::RunRemoteAction {
+                                conn_id: self.connection_id.clone(),
+                                command: cmd,
+                            }
+                        }
+                    }
+                };
+            }
+            Overlay::ParamForm(state) => {
+                return match state.handle_key(key) {
+                    ParamFormResult::None => DetailAction::None,
+                    ParamFormResult::Cancel => {
+                        self.overlay = Overlay::ActionList(ActionListState::new());
+                        DetailAction::None
+                    }
+                    ParamFormResult::Execute(cmd) => {
+                        self.overlay = Overlay::None;
+                        DetailAction::RunRemoteAction {
+                            conn_id: self.connection_id.clone(),
+                            command: cmd,
+                        }
+                    }
+                };
+            }
+            Overlay::None => {}
+        }
+
+        // Normal detail key handling
         if self.confirm_delete {
             return match key.code {
                 KeyCode::Char('y') => DetailAction::Delete(self.connection_id.clone()),
@@ -146,6 +211,10 @@ impl DetailState {
             }
             KeyCode::Char('K') => DetailAction::SetupKeyAuth(self.connection_id.clone()),
             KeyCode::Char('t') => DetailAction::Transfer(self.connection_id.clone()),
+            KeyCode::Char('a') => {
+                self.overlay = Overlay::ActionList(ActionListState::new());
+                DetailAction::None
+            }
             _ => DetailAction::None,
         }
     }

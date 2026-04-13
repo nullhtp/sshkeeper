@@ -86,7 +86,7 @@ impl App {
                 }
             }
             Screen::Detail(state) => {
-                match state.handle_key(key) {
+                match state.handle_key(key, &self.store) {
                     DetailAction::None => {}
                     DetailAction::Back => {
                         self.status_message = None;
@@ -112,6 +112,12 @@ impl App {
                     }
                     DetailAction::Transfer(id) => {
                         self.do_open_transfer(&id);
+                    }
+                    DetailAction::QuickActions(_id) => {
+                        // handled internally by DetailState overlay
+                    }
+                    DetailAction::RunRemoteAction { conn_id, command } => {
+                        self.do_run_quick_action(&conn_id, &command, terminal)?;
                     }
                 }
             }
@@ -312,6 +318,46 @@ impl App {
         Ok(())
     }
 
+    fn do_run_quick_action(
+        &mut self,
+        conn_id: &str,
+        command: &str,
+        terminal: &mut ratatui::DefaultTerminal,
+    ) -> Result<()> {
+        let conn = match self.store.find_by_id(conn_id) {
+            Some(c) => c.clone(),
+            None => return Ok(()),
+        };
+
+        // Suspend TUI
+        ratatui::restore();
+        println!("Running on {}: {}\n", conn.name, command);
+
+        let mut cmd = crate::ssh::actions::build_ssh_command(&conn, command);
+        let result = cmd.status();
+
+        println!("\nPress Enter to continue...");
+        let _ = std::io::Read::read(&mut std::io::stdin(), &mut [0u8]);
+
+        // Resume TUI
+        *terminal = ratatui::init();
+
+        match result {
+            Ok(status) if status.success() => {
+                self.status_message = Some("Action completed.".into());
+            }
+            Ok(status) => {
+                let code = status.code().unwrap_or(-1);
+                self.status_message = Some(format!("Action failed (exit code {})", code));
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Action error: {}", e));
+            }
+        }
+        self.screen = Screen::Detail(DetailState::new(conn_id.to_string()));
+        Ok(())
+    }
+
     fn do_import(&mut self) {
         match crate::storage::import_ssh_config(self.store.all()) {
             Ok(result) => {
@@ -353,6 +399,8 @@ pub enum DetailAction {
     Delete(String),
     SetupKeyAuth(String),
     Transfer(String),
+    QuickActions(String),
+    RunRemoteAction { conn_id: String, command: String },
 }
 
 pub enum EditorAction {
