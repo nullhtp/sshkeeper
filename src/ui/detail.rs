@@ -6,11 +6,13 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 use super::app::DetailAction;
+use super::browse::render_help_popup;
 use super::quick_actions::{ActionListResult, ActionListState, ParamFormResult, ParamFormState};
 use super::theme;
 
 enum Overlay {
     None,
+    Help,
     ActionList(ActionListState),
     ParamForm(ParamFormState),
 }
@@ -30,6 +32,7 @@ impl DetailState {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn render(&mut self, frame: &mut Frame, store: &ConnectionStore) {
         let Some(conn) = store.find_by_id(&self.connection_id) else {
             frame.render_widget(
@@ -43,7 +46,8 @@ impl DetailState {
             Constraint::Length(1), // title
             Constraint::Min(1),    // details
             Constraint::Length(3), // SSH command
-            Constraint::Length(1), // help
+            Constraint::Length(1), // help line 1
+            Constraint::Length(1), // help line 2
         ])
         .split(frame.area());
 
@@ -110,23 +114,49 @@ impl DetailState {
             .borders(Borders::ALL)
             .title(" SSH Command ");
         frame.render_widget(
-            Paragraph::new(format!("  {}", conn.ssh_command()))
-                .block(cmd_block)
-                .style(theme::DIM_STYLE),
+            Paragraph::new(format!("  {}", conn.ssh_command())).block(cmd_block),
             chunks[2],
         );
 
-        // Help line
-        let help = if self.confirm_delete {
-            " Really delete? y: yes | n: cancel"
+        // Help lines
+        if self.confirm_delete {
+            frame.render_widget(
+                Paragraph::new(" Really delete? y: yes | n: cancel").style(theme::ERROR_STYLE),
+                chunks[3],
+            );
         } else {
-            " ESC: back | Enter: connect | e: edit | d: delete | t: transfer | u: tunnels | K: key auth | a: actions"
-        };
-        frame.render_widget(Paragraph::new(help).style(theme::HINT_STYLE), chunks[3]);
+            frame.render_widget(
+                Paragraph::new(" ESC: back | Enter: connect | e: edit | d: delete")
+                    .style(theme::HINT_STYLE),
+                chunks[3],
+            );
+            frame.render_widget(
+                Paragraph::new(" a: actions | t: transfer | u: tunnels | K: key auth | ?: help")
+                    .style(theme::HINT_STYLE),
+                chunks[4],
+            );
+        }
 
         // Render overlay on top
         match &mut self.overlay {
             Overlay::None => {}
+            Overlay::Help => {
+                render_help_popup(
+                    frame,
+                    "Detail Keys",
+                    &[
+                        ("Enter", "Connect via SSH"),
+                        ("e", "Edit connection"),
+                        ("d", "Delete connection"),
+                        ("a", "Quick actions"),
+                        ("t", "File transfer"),
+                        ("u", "Manage tunnels"),
+                        ("K", "Setup key auth"),
+                        ("ESC", "Back to list"),
+                        ("?", "Toggle this help"),
+                    ],
+                );
+            }
             Overlay::ActionList(state) => state.render(frame),
             Overlay::ParamForm(state) => state.render(frame),
         }
@@ -135,6 +165,10 @@ impl DetailState {
     pub fn handle_key(&mut self, key: KeyEvent, store: &ConnectionStore) -> DetailAction {
         // Delegate to overlay if active
         match &mut self.overlay {
+            Overlay::Help => {
+                self.overlay = Overlay::None;
+                return DetailAction::None;
+            }
             Overlay::ActionList(state) => {
                 return match state.handle_key(key) {
                     ActionListResult::None => DetailAction::None,
@@ -204,6 +238,10 @@ impl DetailState {
             KeyCode::Char('u') => DetailAction::ManageTunnels(self.connection_id.clone()),
             KeyCode::Char('a') => {
                 self.overlay = Overlay::ActionList(ActionListState::new());
+                DetailAction::None
+            }
+            KeyCode::Char('?') => {
+                self.overlay = Overlay::Help;
                 DetailAction::None
             }
             _ => DetailAction::None,

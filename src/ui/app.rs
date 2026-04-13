@@ -14,7 +14,7 @@ use super::transfer::{TransferAction, TransferScreen};
 use super::tunnels::{TunnelAction, TunnelScreenState};
 
 pub enum Screen {
-    Browse(BrowseState),
+    Browse,
     Detail(DetailState),
     Editor(EditorState),
     Transfer {
@@ -32,6 +32,7 @@ pub struct App {
     pub storage: TomlStorage,
     pub transfer_history: TransferHistory,
     pub screen: Screen,
+    pub browse_state: BrowseState,
     pub ssh_backend: SystemSshBackend,
     pub tunnel_manager: TunnelManager,
     pub status_message: Option<String>,
@@ -49,7 +50,8 @@ impl App {
             store: ConnectionStore::new(connections),
             storage,
             transfer_history,
-            screen: Screen::Browse(BrowseState::new()),
+            screen: Screen::Browse,
+            browse_state: BrowseState::new(),
             ssh_backend: SystemSshBackend,
             tunnel_manager: TunnelManager::new(),
             status_message: None,
@@ -72,7 +74,7 @@ impl App {
 
     fn render(&mut self, frame: &mut Frame) {
         match &mut self.screen {
-            Screen::Browse(state) => {
+            Screen::Browse => {
                 let active = self.tunnel_manager.active_count();
                 let status = if active > 0 {
                     let base = self.status_message.as_deref().unwrap_or("");
@@ -88,7 +90,8 @@ impl App {
                 } else {
                     self.status_message.clone()
                 };
-                state.render(frame, &self.store, status.as_deref());
+                self.browse_state
+                    .render(frame, &self.store, status.as_deref());
             }
             Screen::Detail(state) => state.render(frame, &self.store),
             Screen::Editor(state) => state.render(frame),
@@ -105,12 +108,20 @@ impl App {
             return Ok(());
         }
 
+        // Clear status message on any keypress
+        if matches!(self.screen, Screen::Browse) {
+            self.status_message = None;
+        }
+
         match &mut self.screen {
-            Screen::Browse(state) => match state.handle_key(key, &self.store) {
+            Screen::Browse => match self.browse_state.handle_key(key, &self.store) {
                 BrowseAction::None => {}
                 BrowseAction::Quit => self.should_quit = true,
                 BrowseAction::ViewDetail(id) => {
                     self.screen = Screen::Detail(DetailState::new(id));
+                }
+                BrowseAction::Connect(id) => {
+                    self.do_connect(&id, terminal)?;
                 }
                 BrowseAction::AddNew => {
                     self.screen = Screen::Editor(EditorState::new_add());
@@ -123,7 +134,7 @@ impl App {
                 DetailAction::None => {}
                 DetailAction::Back => {
                     self.status_message = None;
-                    self.screen = Screen::Browse(BrowseState::new());
+                    self.screen = Screen::Browse;
                 }
                 DetailAction::Connect(id) => {
                     self.do_connect(&id, terminal)?;
@@ -137,7 +148,7 @@ impl App {
                     if self.store.remove(&id) {
                         self.storage.save(self.store.all())?;
                         self.status_message = Some("Connection deleted.".into());
-                        self.screen = Screen::Browse(BrowseState::new());
+                        self.screen = Screen::Browse;
                     }
                 }
                 DetailAction::SetupKeyAuth(id) => {
@@ -210,7 +221,7 @@ impl App {
             Screen::Editor(state) => match state.handle_key(key) {
                 EditorAction::None => {}
                 EditorAction::Cancel => {
-                    self.screen = Screen::Browse(BrowseState::new());
+                    self.screen = Screen::Browse;
                 }
                 EditorAction::Save(conn) => {
                     let conn = *conn;
@@ -227,7 +238,7 @@ impl App {
                         }
                     }
                     self.storage.save(self.store.all())?;
-                    self.screen = Screen::Browse(BrowseState::new());
+                    self.screen = Screen::Browse;
                 }
             },
         }
@@ -258,7 +269,7 @@ impl App {
                 self.status_message = Some(format!("SSH error: {e}"));
             }
         }
-        self.screen = Screen::Browse(BrowseState::new());
+        self.screen = Screen::Browse;
         Ok(())
     }
 
@@ -496,6 +507,7 @@ pub enum BrowseAction {
     None,
     Quit,
     ViewDetail(String),
+    Connect(String),
     AddNew,
     Import,
 }

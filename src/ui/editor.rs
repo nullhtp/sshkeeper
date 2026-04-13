@@ -12,8 +12,8 @@ use super::app::EditorAction;
 use super::theme;
 
 const FIELD_LABELS: &[&str] = &[
-    "Name",
-    "Host",
+    "Name *",
+    "Host *",
     "Port",
     "User",
     "Identity File",
@@ -35,6 +35,7 @@ pub struct EditorState {
     focused: usize,
     original_id: Option<String>,
     original_created: Option<chrono::DateTime<Utc>>,
+    error: Option<String>,
 }
 
 impl EditorState {
@@ -47,6 +48,7 @@ impl EditorState {
             focused: 0,
             original_id: None,
             original_created: None,
+            error: None,
         }
     }
 
@@ -67,6 +69,7 @@ impl EditorState {
             focused: 0,
             original_id: Some(conn.id),
             original_created: Some(conn.created_at),
+            error: None,
         }
     }
 
@@ -106,6 +109,14 @@ impl EditorState {
             frame.render_widget(Paragraph::new(content).block(block), chunks[i + 1]);
         }
 
+        // Error message
+        if let Some(ref err) = self.error {
+            frame.render_widget(
+                Paragraph::new(format!("  {err}")).style(theme::ERROR_STYLE),
+                chunks[FIELD_COUNT + 1],
+            );
+        }
+
         let help = " Tab/↓: next | Shift+Tab/↑: prev | Enter: save | ESC: cancel";
         frame.render_widget(
             Paragraph::new(help).style(theme::HINT_STYLE),
@@ -114,6 +125,7 @@ impl EditorState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> EditorAction {
+        self.error = None;
         match key.code {
             KeyCode::Esc => EditorAction::Cancel,
             KeyCode::Enter => self.try_save(),
@@ -136,11 +148,12 @@ impl EditorState {
         }
     }
 
-    fn try_save(&self) -> EditorAction {
+    fn try_save(&mut self) -> EditorAction {
         let name = self.fields[0].value().trim().to_string();
         let host = self.fields[1].value().trim().to_string();
         if name.is_empty() || host.is_empty() {
-            return EditorAction::None; // require at minimum name + host
+            self.error = Some("Name and Host are required.".into());
+            return EditorAction::None;
         }
 
         let port: u16 = self.fields[2].value().trim().parse().unwrap_or(22);

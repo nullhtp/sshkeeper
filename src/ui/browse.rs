@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState};
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
@@ -15,6 +15,7 @@ pub struct BrowseState {
     pub search_input: Input,
     pub search_active: bool,
     pub grouped: bool,
+    pub show_help: bool,
     filtered_ids: Vec<String>,
 }
 
@@ -25,6 +26,7 @@ impl BrowseState {
             search_input: Input::default(),
             search_active: false,
             grouped: false,
+            show_help: false,
             filtered_ids: Vec::new(),
         }
     }
@@ -80,9 +82,31 @@ impl BrowseState {
         let help = if self.search_active {
             " ESC: cancel search"
         } else {
-            " q: quit | a: add | i: import | /: search | Tab: group | Enter: view"
+            " q: quit | a: add | i: import | /: search | Tab: group | c: connect | Enter: view | ?: help"
         };
         frame.render_widget(Paragraph::new(help).style(theme::HINT_STYLE), chunks[3]);
+
+        // Help overlay
+        if self.show_help {
+            render_help_popup(
+                frame,
+                "Browse Keys",
+                &[
+                    ("j / ↓", "Move down"),
+                    ("k / ↑", "Move up"),
+                    ("g", "Jump to top"),
+                    ("G", "Jump to bottom"),
+                    ("Enter", "View connection details"),
+                    ("c", "Connect via SSH"),
+                    ("a", "Add new connection"),
+                    ("i", "Import from ~/.ssh/config"),
+                    ("/", "Search connections"),
+                    ("Tab", "Toggle group view"),
+                    ("q", "Quit"),
+                    ("?", "Toggle this help"),
+                ],
+            );
+        }
     }
 
     #[allow(clippy::unused_self)]
@@ -116,17 +140,15 @@ impl BrowseState {
         let rows: Vec<Row> = connections
             .iter()
             .map(|c| {
+                let user_prefix = c.user.as_deref().map_or(String::new(), |u| format!("{u}@"));
+                let port_suffix = if c.port == 22 {
+                    String::new()
+                } else {
+                    format!(":{}", c.port)
+                };
                 Row::new(vec![
                     Cell::from(c.name.as_str()),
-                    Cell::from(format!(
-                        "{}{}",
-                        c.host,
-                        if c.port == 22 {
-                            String::new()
-                        } else {
-                            format!(":{}", c.port)
-                        }
-                    )),
+                    Cell::from(format!("{user_prefix}{}{port_suffix}", c.host)),
                     Cell::from(c.group.as_deref().unwrap_or("-")),
                 ])
             })
@@ -175,17 +197,15 @@ impl BrowseState {
                 connections.iter().filter(|c| c.group == *group).collect();
 
             for c in group_conns {
+                let user_prefix = c.user.as_deref().map_or(String::new(), |u| format!("{u}@"));
+                let port_suffix = if c.port == 22 {
+                    String::new()
+                } else {
+                    format!(":{}", c.port)
+                };
                 rows.push(Row::new(vec![
                     Cell::from(format!("  {}", c.name)),
-                    Cell::from(format!(
-                        "{}{}",
-                        c.host,
-                        if c.port == 22 {
-                            String::new()
-                        } else {
-                            format!(":{}", c.port)
-                        }
-                    )),
+                    Cell::from(format!("{user_prefix}{}{port_suffix}", c.host)),
                     Cell::from(""),
                 ]));
                 flat_ids.push(c.id.clone());
@@ -213,11 +233,20 @@ impl BrowseState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, store: &ConnectionStore) -> BrowseAction {
+        if self.show_help {
+            self.show_help = false;
+            return BrowseAction::None;
+        }
+
         if self.search_active {
             return self.handle_search_key(key);
         }
 
         match key.code {
+            KeyCode::Char('?') => {
+                self.show_help = true;
+                BrowseAction::None
+            }
             KeyCode::Char('q') => BrowseAction::Quit,
             KeyCode::Char('j') | KeyCode::Down => {
                 self.move_selection(1, store);
@@ -245,6 +274,14 @@ impl BrowseState {
             KeyCode::Tab => {
                 self.grouped = !self.grouped;
                 self.table_state.select(Some(0));
+                BrowseAction::None
+            }
+            KeyCode::Char('c') => {
+                if let Some(id) = self.selected_id() {
+                    if !id.is_empty() {
+                        return BrowseAction::Connect(id);
+                    }
+                }
                 BrowseAction::None
             }
             KeyCode::Char('a') => BrowseAction::AddNew,
@@ -309,3 +346,34 @@ impl BrowseState {
 }
 
 use crossterm::event::Event;
+
+pub fn render_help_popup(frame: &mut Frame, title: &str, bindings: &[(&str, &str)]) {
+    let max_key_len = bindings.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+    let max_desc_len = bindings.iter().map(|(_, d)| d.len()).max().unwrap_or(0);
+    let popup_width = (max_key_len + max_desc_len + 7).min(60) as u16;
+    let popup_height = (bindings.len() as u16 + 2).min(frame.area().height - 2);
+
+    let area = frame.area();
+    let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(x, y, popup_width, popup_height);
+
+    frame.render_widget(Clear, popup_area);
+
+    let lines: Vec<Line> = bindings
+        .iter()
+        .map(|(key, desc)| {
+            Line::from(vec![
+                Span::styled(format!(" {key:>max_key_len$}"), theme::HEADER_STYLE),
+                Span::raw("  "),
+                Span::raw(*desc),
+            ])
+        })
+        .collect();
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {title} "))
+        .style(theme::TITLE_STYLE);
+    frame.render_widget(Paragraph::new(lines).block(block), popup_area);
+}
