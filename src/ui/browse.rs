@@ -40,7 +40,8 @@ impl BrowseState {
 
         // Title
         frame.render_widget(
-            Paragraph::new(" SSHKeeper").style(theme::TITLE_STYLE),
+            Paragraph::new(format!(" SSHKeeper v{}", env!("CARGO_PKG_VERSION")))
+                .style(theme::TITLE_STYLE),
             chunks[0],
         );
 
