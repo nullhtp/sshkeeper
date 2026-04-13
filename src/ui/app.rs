@@ -1,4 +1,5 @@
 use crate::model::{Connection, ConnectionStore};
+use crate::ssh::tunnel::TunnelManager;
 use crate::ssh::{SshBackend, SystemSshBackend};
 use crate::storage::{TomlStorage, TransferHistory};
 use anyhow::Result;
@@ -10,6 +11,7 @@ use super::browse::BrowseState;
 use super::detail::DetailState;
 use super::editor::{EditorMode, EditorState};
 use super::transfer::{TransferAction, TransferScreen};
+use super::tunnels::{TunnelAction, TunnelScreenState};
 
 pub enum Screen {
     Browse(BrowseState),
@@ -19,6 +21,10 @@ pub enum Screen {
         conn_id: String,
         state: Box<TransferScreen>,
     },
+    Tunnels {
+        conn_id: String,
+        state: Box<TunnelScreenState>,
+    },
 }
 
 pub struct App {
@@ -27,6 +33,7 @@ pub struct App {
     pub transfer_history: TransferHistory,
     pub screen: Screen,
     pub ssh_backend: SystemSshBackend,
+    pub tunnel_manager: TunnelManager,
     pub status_message: Option<String>,
     pub should_quit: bool,
 }
@@ -44,6 +51,7 @@ impl App {
             transfer_history,
             screen: Screen::Browse(BrowseState::new()),
             ssh_backend: SystemSshBackend,
+            tunnel_manager: TunnelManager::new(),
             status_message: None,
             should_quit: false,
         }
@@ -58,20 +66,35 @@ impl App {
                 }
             }
         }
+        self.tunnel_manager.stop_all();
         Ok(())
     }
 
     fn render(&mut self, frame: &mut Frame) {
         match &mut self.screen {
             Screen::Browse(state) => {
-                state.render(frame, &self.store, self.status_message.as_deref());
+                let active = self.tunnel_manager.active_count();
+                let status = if active > 0 {
+                    let base = self.status_message.as_deref().unwrap_or("");
+                    let tunnel_msg = format!("{active} tunnel{} active", if active == 1 { "" } else { "s" });
+                    if base.is_empty() {
+                        Some(tunnel_msg)
+                    } else {
+                        Some(format!("{base} | {tunnel_msg}"))
+                    }
+                } else {
+                    self.status_message.clone()
+                };
+                state.render(frame, &self.store, status.as_deref());
             }
             Screen::Detail(state) => state.render(frame, &self.store),
             Screen::Editor(state) => state.render(frame),
             Screen::Transfer { state, .. } => state.render(frame),
+            Screen::Tunnels { state, .. } => state.render(frame, &mut self.tunnel_manager),
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_key(&mut self, key: KeyEvent, terminal: &mut ratatui::DefaultTerminal) -> Result<()> {
         // Global Ctrl+C quit
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
@@ -120,10 +143,44 @@ impl App {
                 DetailAction::Transfer(id) => {
                     self.do_open_transfer(&id);
                 }
+                DetailAction::ManageTunnels(id) => {
+                    self.do_open_tunnels(&id);
+                }
                 DetailAction::RunRemoteAction { conn_id, command } => {
                     self.do_run_quick_action(&conn_id, &command, terminal)?;
                 }
             },
+            Screen::Tunnels { conn_id, state } => {
+                let action = state.handle_key(key);
+                let cid = conn_id.clone();
+                match action {
+                    TunnelAction::None => {}
+                    TunnelAction::Back => {
+                        self.screen = Screen::Detail(DetailState::new(cid));
+                    }
+                    TunnelAction::Start { tunnel_id } => {
+                        self.do_toggle_tunnel(&cid, &tunnel_id);
+                    }
+                    TunnelAction::Stop { tunnel_id } => {
+                        self.tunnel_manager.stop(&tunnel_id);
+                        // Save the updated tunnel list (tunnel was removed by delete)
+                        if let Screen::Tunnels { state, conn_id } = &self.screen {
+                            if let Some(conn) = self.store.find_by_id_mut(conn_id) {
+                                conn.tunnels.clone_from(&state.tunnels);
+                                conn.updated_at = chrono::Utc::now();
+                            }
+                            let _ = self.storage.save(self.store.all());
+                        }
+                    }
+                    TunnelAction::Save { ref tunnels } => {
+                        if let Some(conn) = self.store.find_by_id_mut(&cid) {
+                            conn.tunnels.clone_from(tunnels);
+                            conn.updated_at = chrono::Utc::now();
+                        }
+                        let _ = self.storage.save(self.store.all());
+                    }
+                }
+            }
             Screen::Transfer { conn_id, state } => match state.handle_key(key) {
                 TransferAction::None => {}
                 TransferAction::Cancel => {
@@ -372,6 +429,40 @@ impl App {
         Ok(())
     }
 
+    fn do_open_tunnels(&mut self, id: &str) {
+        let conn = match self.store.find_by_id(id) {
+            Some(c) => c.clone(),
+            None => return,
+        };
+        self.screen = Screen::Tunnels {
+            conn_id: id.to_string(),
+            state: Box::new(TunnelScreenState::new(conn.name.clone(), conn.tunnels)),
+        };
+    }
+
+    fn do_toggle_tunnel(&mut self, conn_id: &str, tunnel_id: &str) {
+        if self.tunnel_manager.is_running(tunnel_id) {
+            self.tunnel_manager.stop(tunnel_id);
+            self.status_message = Some("Tunnel stopped.".into());
+        } else {
+            let conn = match self.store.find_by_id(conn_id) {
+                Some(c) => c.clone(),
+                None => return,
+            };
+            let Some(tunnel) = conn.tunnels.iter().find(|t| t.id == tunnel_id) else {
+                return;
+            };
+            match self.tunnel_manager.start(&conn, tunnel) {
+                Ok(()) => {
+                    self.status_message = Some(format!("Tunnel '{}' started.", tunnel.name));
+                }
+                Err(e) => {
+                    self.status_message = Some(format!("Tunnel error: {e}"));
+                }
+            }
+        }
+    }
+
     fn do_import(&mut self) {
         match crate::storage::import_ssh_config(self.store.all()) {
             Ok(result) => {
@@ -414,6 +505,7 @@ pub enum DetailAction {
     Delete(String),
     SetupKeyAuth(String),
     Transfer(String),
+    ManageTunnels(String),
     RunRemoteAction { conn_id: String, command: String },
 }
 

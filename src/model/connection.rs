@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+use super::tunnel::Tunnel;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connection {
     pub id: String,
@@ -22,6 +24,8 @@ pub struct Connection {
     pub ssh_options: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_jump: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tunnels: Vec<Tunnel>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -44,6 +48,7 @@ impl Connection {
             tags: Vec::new(),
             ssh_options: BTreeMap::new(),
             proxy_jump: None,
+            tunnels: Vec::new(),
             created_at: now,
             updated_at: now,
         }
@@ -81,5 +86,43 @@ impl Connection {
                 .to_lowercase()
                 .contains(&q)
             || self.tags.iter().any(|t| t.to_lowercase().contains(&q))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::tunnel::{Tunnel, TunnelType};
+
+    #[test]
+    fn test_connection_with_tunnels_roundtrip() {
+        let mut conn = Connection::new("test".into(), "example.com".into());
+        let mut tunnel = Tunnel::new("pg".into(), TunnelType::Local, 5432);
+        tunnel.remote_host = Some("db.internal".into());
+        tunnel.remote_port = Some(5432);
+        conn.tunnels.push(tunnel);
+
+        let toml_str = toml::to_string(&conn).unwrap();
+        let deserialized: Connection = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(deserialized.tunnels.len(), 1);
+        assert_eq!(deserialized.tunnels[0].name, "pg");
+        assert_eq!(deserialized.tunnels[0].tunnel_type, TunnelType::Local);
+        assert_eq!(deserialized.tunnels[0].bind_port, 5432);
+    }
+
+    #[test]
+    fn test_connection_without_tunnels_field_backwards_compat() {
+        let toml_str = r#"
+id = "test-id"
+name = "old-server"
+host = "example.com"
+port = 22
+created_at = "2026-01-01T00:00:00Z"
+updated_at = "2026-01-01T00:00:00Z"
+"#;
+        let conn: Connection = toml::from_str(toml_str).unwrap();
+        assert!(conn.tunnels.is_empty());
+        assert_eq!(conn.name, "old-server");
     }
 }

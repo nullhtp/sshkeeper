@@ -120,7 +120,7 @@ impl DetailState {
         let help = if self.confirm_delete {
             " Really delete? y: yes | n: cancel"
         } else {
-            " ESC: back | Enter: connect | e: edit | d: delete | t: transfer | K: setup key auth | a: actions"
+            " ESC: back | Enter: connect | e: edit | d: delete | t: transfer | u: tunnels | K: key auth | a: actions"
         };
         frame.render_widget(Paragraph::new(help).style(theme::HINT_STYLE), chunks[3]);
 
@@ -201,6 +201,7 @@ impl DetailState {
             }
             KeyCode::Char('K') => DetailAction::SetupKeyAuth(self.connection_id.clone()),
             KeyCode::Char('t') => DetailAction::Transfer(self.connection_id.clone()),
+            KeyCode::Char('u') => DetailAction::ManageTunnels(self.connection_id.clone()),
             KeyCode::Char('a') => {
                 self.overlay = Overlay::ActionList(ActionListState::new());
                 DetailAction::None

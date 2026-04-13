@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Connection profile fields
 The system SHALL represent each connection profile with the following fields:
@@ -29,21 +29,3 @@ Note: Transfer history is stored in a separate file (`~/.sshkeeper/transfer_hist
 #### Scenario: Load connection without tunnels field
 - **WHEN** a connection is deserialized from TOML that has no `tunnels` field
 - **THEN** the system SHALL default `tunnels` to an empty list (backwards compatibility)
-
-### Requirement: Connection profile serialization
-The system SHALL serialize and deserialize connection profiles to/from TOML format using serde.
-
-#### Scenario: Round-trip serialization
-- **WHEN** a connection profile is serialized to TOML and then deserialized
-- **THEN** all fields SHALL match the original values exactly
-
-### Requirement: Connection grouping
-The system SHALL support organizing connections by a `group` field. Connections with the same `group` value SHALL be logically grouped together.
-
-#### Scenario: Connections in the same group
-- **WHEN** two connections have `group` set to "production"
-- **THEN** both connections SHALL appear under the "production" group when grouped
-
-#### Scenario: Ungrouped connection
-- **WHEN** a connection has no `group` value
-- **THEN** it SHALL appear in a default ungrouped category
