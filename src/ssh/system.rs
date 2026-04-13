@@ -1,6 +1,6 @@
 use super::SshBackend;
 use crate::model::Connection;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 pub struct SystemSshBackend;
@@ -21,7 +21,7 @@ impl SystemSshBackend {
             cmd.arg("-J").arg(jump);
         }
         for (key, val) in &profile.ssh_options {
-            cmd.arg("-o").arg(format!("{}={}", key, val));
+            cmd.arg("-o").arg(format!("{key}={val}"));
         }
         cmd.arg(&profile.host);
         cmd
@@ -42,19 +42,17 @@ impl SshBackend for SystemSshBackend {
                 bail!("SSH binary not found in PATH. Please install OpenSSH.");
             }
             Err(e) => {
-                bail!("Failed to check for SSH binary: {}", e);
+                bail!("Failed to check for SSH binary: {e}");
             }
             _ => {}
         }
 
         let mut cmd = Self::build_command(profile);
-        let status = cmd
-            .status()
-            .context("Failed to launch SSH process")?;
+        let status = cmd.status().context("Failed to launch SSH process")?;
 
         if !status.success() {
             if let Some(code) = status.code() {
-                bail!("SSH exited with code {}", code);
+                bail!("SSH exited with code {code}");
             }
         }
         Ok(())

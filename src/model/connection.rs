@@ -55,16 +55,16 @@ impl Connection {
             parts.push(format!("-p {}", self.port));
         }
         if let Some(ref user) = self.user {
-            parts.push(format!("-l {}", user));
+            parts.push(format!("-l {user}"));
         }
         if let Some(ref key) = self.identity_file {
-            parts.push(format!("-i {}", key));
+            parts.push(format!("-i {key}"));
         }
         if let Some(ref jump) = self.proxy_jump {
-            parts.push(format!("-J {}", jump));
+            parts.push(format!("-J {jump}"));
         }
         for (key, val) in &self.ssh_options {
-            parts.push(format!("-o {}={}", key, val));
+            parts.push(format!("-o {key}={val}"));
         }
         parts.push(self.host.clone());
         parts.join(" ")
@@ -74,7 +74,12 @@ impl Connection {
         let q = query.to_lowercase();
         self.name.to_lowercase().contains(&q)
             || self.host.to_lowercase().contains(&q)
-            || self.group.as_deref().unwrap_or("").to_lowercase().contains(&q)
+            || self
+                .group
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(&q)
             || self.tags.iter().any(|t| t.to_lowercase().contains(&q))
     }
 }

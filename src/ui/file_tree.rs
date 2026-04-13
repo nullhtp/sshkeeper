@@ -1,8 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::Frame;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -76,7 +76,10 @@ impl FileTree {
         }
     }
 
-    fn read_dir_sorted(dir: &Path, show_hidden: bool) -> std::io::Result<Vec<(PathBuf, String, bool)>> {
+    fn read_dir_sorted(
+        dir: &Path,
+        show_hidden: bool,
+    ) -> std::io::Result<Vec<(PathBuf, String, bool)>> {
         let mut entries: Vec<(PathBuf, String, bool)> = Vec::new();
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
@@ -89,7 +92,8 @@ impl FileTree {
         }
         // Dirs first, then alphabetical
         entries.sort_by(|a, b| {
-            b.2.cmp(&a.2).then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase()))
+            b.2.cmp(&a.2)
+                .then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase()))
         });
         Ok(entries)
     }
@@ -312,7 +316,7 @@ impl FileTree {
                 // The ".." points to parent, so the root is one level down
                 return Some(first.path.clone());
             }
-            return first.path.parent().map(|p| p.to_path_buf());
+            return first.path.parent().map(std::path::Path::to_path_buf);
         }
         None
     }
@@ -352,12 +356,11 @@ impl FileTree {
 
         // Render jump input if active
         if self.jump_mode {
-            let mut lines: Vec<Line> = Vec::new();
-            lines.push(Line::from(vec![
+            let lines: Vec<Line> = vec![Line::from(vec![
                 Span::styled("Go to: ", theme::HEADER_STYLE),
                 Span::raw(&self.jump_input),
                 Span::styled("_", theme::TITLE_STYLE),
-            ]));
+            ])];
             frame.render_widget(Paragraph::new(lines), inner);
             return;
         }
@@ -373,11 +376,7 @@ impl FileTree {
                 let icon = if node.name == ".." {
                     "↑ "
                 } else if node.is_dir {
-                    if node.expanded {
-                        "▾ "
-                    } else {
-                        "▸ "
-                    }
+                    if node.expanded { "▾ " } else { "▸ " }
                 } else {
                     "  "
                 };
@@ -397,7 +396,14 @@ impl FileTree {
 
                 Line::from(vec![
                     Span::styled(indent, theme::DIM_STYLE),
-                    Span::styled(icon, if node.is_dir { theme::TREE_DIR_STYLE } else { theme::DIM_STYLE }),
+                    Span::styled(
+                        icon,
+                        if node.is_dir {
+                            theme::TREE_DIR_STYLE
+                        } else {
+                            theme::DIM_STYLE
+                        },
+                    ),
                     Span::styled(&node.name, name_style),
                 ])
             })
@@ -408,17 +414,6 @@ impl FileTree {
 
     pub fn is_jump_mode(&self) -> bool {
         self.jump_mode
-    }
-
-    pub fn ensure_cursor_visible(&mut self, height: usize) {
-        if height == 0 {
-            return;
-        }
-        if self.cursor < self.scroll_offset {
-            self.scroll_offset = self.cursor;
-        } else if self.cursor >= self.scroll_offset + height {
-            self.scroll_offset = self.cursor - height + 1;
-        }
     }
 }
 

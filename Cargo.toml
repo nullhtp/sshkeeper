@@ -2,7 +2,12 @@
 name = "sshkeeper"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 description = "A cross-platform TUI for managing SSH connections"
+license = "MIT"
+repository = "https://github.com/nullhtp/sshkeeper"
+keywords = ["ssh", "tui", "terminal", "cli", "devops"]
+categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 ratatui = "0.29"
@@ -15,3 +20,24 @@ anyhow = "1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 tui-input = "0.11"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Allow common pedantic false positives
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_lossless = "allow"
+cast_possible_wrap = "allow"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

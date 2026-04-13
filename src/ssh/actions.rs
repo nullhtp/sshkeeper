@@ -11,7 +11,7 @@ pub enum ActionCategory {
 }
 
 impl ActionCategory {
-    pub fn label(&self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Self::SystemInfo => "System Info",
             Self::ServiceManagement => "Service Management",
@@ -23,6 +23,7 @@ impl ActionCategory {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Confirm is part of the public API for user-defined actions
 pub enum ParamType {
     Text { default: &'static str },
     Select { fetch_command: &'static str },
@@ -56,7 +57,7 @@ impl QuickAction {
         let mut cmd = self.command_template.to_string();
         for (key, val) in values {
             let escaped = shell_escape(val);
-            cmd = cmd.replace(&format!("{{{}}}", key), &escaped);
+            cmd = cmd.replace(&format!("{{{key}}}"), &escaped);
         }
         cmd
     }
@@ -75,13 +76,16 @@ pub fn shell_escape(s: &str) -> String {
         return "''".to_string();
     }
     // If it's safe, return as-is
-    if s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '/' || c == ':') {
+    if s.chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '/' || c == ':')
+    {
         return s.to_string();
     }
     // Wrap in single quotes, escaping existing single quotes
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn build_actions() -> Vec<QuickAction> {
     vec![
         // === System Info ===

@@ -1,5 +1,5 @@
 use crate::model::Connection;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::process::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +20,7 @@ pub fn validate_scp() -> Result<()> {
             bail!("scp not found — install OpenSSH to use file transfer");
         }
         Err(e) => {
-            bail!("Failed to check for scp binary: {}", e);
+            bail!("Failed to check for scp binary: {e}");
         }
         _ => Ok(()),
     }
@@ -50,7 +50,7 @@ pub fn build_scp_command(
         cmd.arg("-J").arg(jump);
     }
     for (key, val) in &conn.ssh_options {
-        cmd.arg("-o").arg(format!("{}={}", key, val));
+        cmd.arg("-o").arg(format!("{key}={val}"));
     }
 
     let remote = if let Some(ref user) = conn.user {

@@ -13,23 +13,12 @@ impl ConnectionStore {
         &self.connections
     }
 
-    pub fn all_mut(&mut self) -> &mut Vec<Connection> {
-        &mut self.connections
-    }
-
     pub fn find_by_id(&self, id: &str) -> Option<&Connection> {
         self.connections.iter().find(|c| c.id == id)
     }
 
     pub fn find_by_id_mut(&mut self, id: &str) -> Option<&mut Connection> {
         self.connections.iter_mut().find(|c| c.id == id)
-    }
-
-    pub fn filter_by_group(&self, group: &str) -> Vec<&Connection> {
-        self.connections
-            .iter()
-            .filter(|c| c.group.as_deref() == Some(group))
-            .collect()
     }
 
     pub fn groups(&self) -> Vec<Option<String>> {
@@ -68,12 +57,6 @@ impl ConnectionStore {
         let len = self.connections.len();
         self.connections.retain(|c| c.id != id);
         self.connections.len() < len
-    }
-
-    pub fn has_duplicate(&self, host: &str, user: Option<&str>, port: u16) -> bool {
-        self.connections.iter().any(|c| {
-            c.host == host && c.user.as_deref() == user && c.port == port
-        })
     }
 
     fn sort(&mut self) {

@@ -8,14 +8,17 @@ use std::time::Duration;
 
 use super::browse::BrowseState;
 use super::detail::DetailState;
-use super::editor::{EditorState, EditorMode};
-use super::transfer::{TransferScreen, TransferAction};
+use super::editor::{EditorMode, EditorState};
+use super::transfer::{TransferAction, TransferScreen};
 
 pub enum Screen {
     Browse(BrowseState),
     Detail(DetailState),
     Editor(EditorState),
-    Transfer { conn_id: String, state: TransferScreen },
+    Transfer {
+        conn_id: String,
+        state: Box<TransferScreen>,
+    },
 }
 
 pub struct App {
@@ -28,8 +31,13 @@ pub struct App {
     pub should_quit: bool,
 }
 
+#[allow(clippy::unnecessary_wraps)]
 impl App {
-    pub fn new(storage: TomlStorage, connections: Vec<Connection>, transfer_history: TransferHistory) -> Self {
+    pub fn new(
+        storage: TomlStorage,
+        connections: Vec<Connection>,
+        transfer_history: TransferHistory,
+    ) -> Self {
         Self {
             store: ConnectionStore::new(connections),
             storage,
@@ -55,7 +63,9 @@ impl App {
 
     fn render(&mut self, frame: &mut Frame) {
         match &mut self.screen {
-            Screen::Browse(state) => state.render(frame, &self.store, self.status_message.as_deref()),
+            Screen::Browse(state) => {
+                state.render(frame, &self.store, self.status_message.as_deref());
+            }
             Screen::Detail(state) => state.render(frame, &self.store),
             Screen::Editor(state) => state.render(frame),
             Screen::Transfer { state, .. } => state.render(frame),
@@ -70,99 +80,96 @@ impl App {
         }
 
         match &mut self.screen {
-            Screen::Browse(state) => {
-                match state.handle_key(key, &self.store) {
-                    BrowseAction::None => {}
-                    BrowseAction::Quit => self.should_quit = true,
-                    BrowseAction::ViewDetail(id) => {
-                        self.screen = Screen::Detail(DetailState::new(id));
-                    }
-                    BrowseAction::AddNew => {
-                        self.screen = Screen::Editor(EditorState::new_add());
-                    }
-                    BrowseAction::Import => {
-                        self.do_import();
+            Screen::Browse(state) => match state.handle_key(key, &self.store) {
+                BrowseAction::None => {}
+                BrowseAction::Quit => self.should_quit = true,
+                BrowseAction::ViewDetail(id) => {
+                    self.screen = Screen::Detail(DetailState::new(id));
+                }
+                BrowseAction::AddNew => {
+                    self.screen = Screen::Editor(EditorState::new_add());
+                }
+                BrowseAction::Import => {
+                    self.do_import();
+                }
+            },
+            Screen::Detail(state) => match state.handle_key(key, &self.store) {
+                DetailAction::None => {}
+                DetailAction::Back => {
+                    self.status_message = None;
+                    self.screen = Screen::Browse(BrowseState::new());
+                }
+                DetailAction::Connect(id) => {
+                    self.do_connect(&id, terminal)?;
+                }
+                DetailAction::Edit(id) => {
+                    if let Some(conn) = self.store.find_by_id(&id) {
+                        self.screen = Screen::Editor(EditorState::new_edit(conn.clone()));
                     }
                 }
-            }
-            Screen::Detail(state) => {
-                match state.handle_key(key, &self.store) {
-                    DetailAction::None => {}
-                    DetailAction::Back => {
-                        self.status_message = None;
+                DetailAction::Delete(id) => {
+                    if self.store.remove(&id) {
+                        self.storage.save(self.store.all())?;
+                        self.status_message = Some("Connection deleted.".into());
                         self.screen = Screen::Browse(BrowseState::new());
                     }
-                    DetailAction::Connect(id) => {
-                        self.do_connect(&id, terminal)?;
-                    }
-                    DetailAction::Edit(id) => {
-                        if let Some(conn) = self.store.find_by_id(&id) {
-                            self.screen = Screen::Editor(EditorState::new_edit(conn.clone()));
-                        }
-                    }
-                    DetailAction::Delete(id) => {
-                        if self.store.remove(&id) {
-                            self.storage.save(self.store.all())?;
-                            self.status_message = Some("Connection deleted.".into());
-                            self.screen = Screen::Browse(BrowseState::new());
-                        }
-                    }
-                    DetailAction::SetupKeyAuth(id) => {
-                        self.do_setup_key_auth(&id, terminal)?;
-                    }
-                    DetailAction::Transfer(id) => {
-                        self.do_open_transfer(&id);
-                    }
-                    DetailAction::QuickActions(_id) => {
-                        // handled internally by DetailState overlay
-                    }
-                    DetailAction::RunRemoteAction { conn_id, command } => {
-                        self.do_run_quick_action(&conn_id, &command, terminal)?;
-                    }
                 }
-            }
-            Screen::Transfer { conn_id, state } => {
-                match state.handle_key(key) {
-                    TransferAction::None => {}
-                    TransferAction::Cancel => {
-                        let id = conn_id.clone();
-                        self.screen = Screen::Detail(DetailState::new(id));
-                    }
-                    TransferAction::Execute {
-                        local_path,
-                        remote_path,
+                DetailAction::SetupKeyAuth(id) => {
+                    self.do_setup_key_auth(&id, terminal)?;
+                }
+                DetailAction::Transfer(id) => {
+                    self.do_open_transfer(&id);
+                }
+                DetailAction::RunRemoteAction { conn_id, command } => {
+                    self.do_run_quick_action(&conn_id, &command, terminal)?;
+                }
+            },
+            Screen::Transfer { conn_id, state } => match state.handle_key(key) {
+                TransferAction::None => {}
+                TransferAction::Cancel => {
+                    let id = conn_id.clone();
+                    self.screen = Screen::Detail(DetailState::new(id));
+                }
+                TransferAction::Execute {
+                    local_path,
+                    remote_path,
+                    direction,
+                    recursive,
+                } => {
+                    let id = conn_id.clone();
+                    self.do_transfer(
+                        &id,
+                        &local_path,
+                        &remote_path,
                         direction,
                         recursive,
-                    } => {
-                        let id = conn_id.clone();
-                        self.do_transfer(&id, &local_path, &remote_path, direction, recursive, terminal)?;
-                    }
+                        terminal,
+                    )?;
                 }
-            }
-            Screen::Editor(state) => {
-                match state.handle_key(key) {
-                    EditorAction::None => {}
-                    EditorAction::Cancel => {
-                        self.screen = Screen::Browse(BrowseState::new());
-                    }
-                    EditorAction::Save(conn) => {
-                        match state.mode {
-                            EditorMode::Add => {
-                                self.store.add(conn);
-                                self.status_message = Some("Connection added.".into());
-                            }
-                            EditorMode::Edit(_) => {
-                                if let Some(existing) = self.store.find_by_id_mut(&conn.id) {
-                                    *existing = conn;
-                                }
-                                self.status_message = Some("Connection updated.".into());
-                            }
+            },
+            Screen::Editor(state) => match state.handle_key(key) {
+                EditorAction::None => {}
+                EditorAction::Cancel => {
+                    self.screen = Screen::Browse(BrowseState::new());
+                }
+                EditorAction::Save(conn) => {
+                    let conn = *conn;
+                    match state.mode {
+                        EditorMode::Add => {
+                            self.store.add(conn);
+                            self.status_message = Some("Connection added.".into());
                         }
-                        self.storage.save(self.store.all())?;
-                        self.screen = Screen::Browse(BrowseState::new());
+                        EditorMode::Edit => {
+                            if let Some(existing) = self.store.find_by_id_mut(&conn.id) {
+                                *existing = conn;
+                            }
+                            self.status_message = Some("Connection updated.".into());
+                        }
                     }
+                    self.storage.save(self.store.all())?;
+                    self.screen = Screen::Browse(BrowseState::new());
                 }
-            }
+            },
         }
         Ok(())
     }
@@ -188,14 +195,18 @@ impl App {
                 self.status_message = Some(format!("Disconnected from {}", conn.name));
             }
             Err(e) => {
-                self.status_message = Some(format!("SSH error: {}", e));
+                self.status_message = Some(format!("SSH error: {e}"));
             }
         }
         self.screen = Screen::Browse(BrowseState::new());
         Ok(())
     }
 
-    fn do_setup_key_auth(&mut self, id: &str, terminal: &mut ratatui::DefaultTerminal) -> Result<()> {
+    fn do_setup_key_auth(
+        &mut self,
+        id: &str,
+        terminal: &mut ratatui::DefaultTerminal,
+    ) -> Result<()> {
         let conn = match self.store.find_by_id(id) {
             Some(c) => c.clone(),
             None => return Ok(()),
@@ -224,7 +235,7 @@ impl App {
                 self.status_message = Some(format!("Key auth configured for {}", conn.name));
             }
             Err(e) => {
-                self.status_message = Some(format!("Key setup failed: {}", e));
+                self.status_message = Some(format!("Key setup failed: {e}"));
             }
         }
         self.screen = Screen::Detail(DetailState::new(conn.id));
@@ -242,7 +253,7 @@ impl App {
         };
         self.screen = Screen::Transfer {
             conn_id: id.to_string(),
-            state: TransferScreen::new(conn),
+            state: Box::new(TransferScreen::new(conn)),
         };
     }
 
@@ -275,7 +286,10 @@ impl App {
 
         // Suspend TUI
         ratatui::restore();
-        println!("{}: {} ↔ {}:{}", dir_label, local_path, conn.host, remote_path);
+        println!(
+            "{}: {} ↔ {}:{}",
+            dir_label, local_path, conn.host, remote_path
+        );
         println!();
 
         let result = cmd.status();
@@ -295,23 +309,23 @@ impl App {
                 self.transfer_history.push(conn_id, entry);
                 let _ = self.transfer_history.save();
 
-                self.status_message = Some(format!("Transfer complete: {}", local_path));
+                self.status_message = Some(format!("Transfer complete: {local_path}"));
                 self.screen = Screen::Detail(DetailState::new(conn_id.to_string()));
             }
             Ok(status) => {
                 let code = status.code().unwrap_or(-1);
-                self.status_message = Some(format!("Transfer failed (exit code {})", code));
+                self.status_message = Some(format!("Transfer failed (exit code {code})"));
                 // Stay on transfer screen — rebuild it
                 self.screen = Screen::Transfer {
                     conn_id: conn_id.to_string(),
-                    state: TransferScreen::new(conn.clone()),
+                    state: Box::new(TransferScreen::new(conn.clone())),
                 };
             }
             Err(e) => {
-                self.status_message = Some(format!("Transfer error: {}", e));
+                self.status_message = Some(format!("Transfer error: {e}"));
                 self.screen = Screen::Transfer {
                     conn_id: conn_id.to_string(),
-                    state: TransferScreen::new(conn.clone()),
+                    state: Box::new(TransferScreen::new(conn.clone())),
                 };
             }
         }
@@ -348,10 +362,10 @@ impl App {
             }
             Ok(status) => {
                 let code = status.code().unwrap_or(-1);
-                self.status_message = Some(format!("Action failed (exit code {})", code));
+                self.status_message = Some(format!("Action failed (exit code {code})"));
             }
             Err(e) => {
-                self.status_message = Some(format!("Action error: {}", e));
+                self.status_message = Some(format!("Action error: {e}"));
             }
         }
         self.screen = Screen::Detail(DetailState::new(conn_id.to_string()));
@@ -367,17 +381,18 @@ impl App {
                     self.store.add(conn);
                 }
                 if let Err(e) = self.storage.save(self.store.all()) {
-                    self.status_message = Some(format!("Import save error: {}", e));
+                    self.status_message = Some(format!("Import save error: {e}"));
                     return;
                 }
-                let mut msg = format!("Imported {} connections", count);
-                if skipped > 0 {
-                    msg.push_str(&format!(", {} duplicates skipped", skipped));
-                }
+                let msg = if skipped > 0 {
+                    format!("Imported {count} connections, {skipped} duplicates skipped")
+                } else {
+                    format!("Imported {count} connections")
+                };
                 self.status_message = Some(msg);
             }
             Err(e) => {
-                self.status_message = Some(format!("Import failed: {}", e));
+                self.status_message = Some(format!("Import failed: {e}"));
             }
         }
     }
@@ -399,12 +414,11 @@ pub enum DetailAction {
     Delete(String),
     SetupKeyAuth(String),
     Transfer(String),
-    QuickActions(String),
     RunRemoteAction { conn_id: String, command: String },
 }
 
 pub enum EditorAction {
     None,
     Cancel,
-    Save(Connection),
+    Save(Box<Connection>),
 }

@@ -1,6 +1,6 @@
 use crate::model::Connection;
-use anyhow::{bail, Context, Result};
-use std::path::PathBuf;
+use anyhow::{Context, Result, bail};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const KEY_TYPES: &[&str] = &["id_ed25519", "id_ecdsa", "id_rsa"];
@@ -33,7 +33,7 @@ pub fn generate_key() -> Result<PathBuf> {
         Ok(output) if !output.status.success() => {
             bail!("ssh-keygen not found in PATH. Please install OpenSSH.");
         }
-        Err(e) => bail!("Failed to check for ssh-keygen: {}", e),
+        Err(e) => bail!("Failed to check for ssh-keygen: {e}"),
         _ => {}
     }
 
@@ -60,13 +60,10 @@ pub fn generate_key() -> Result<PathBuf> {
 }
 
 /// Deploy the public key to a remote server. TUI must be suspended before calling this.
-pub fn deploy_key(conn: &Connection, private_key_path: &PathBuf) -> Result<()> {
+pub fn deploy_key(conn: &Connection, private_key_path: &Path) -> Result<()> {
     let pub_key_path = private_key_path.with_extension("pub");
     if !pub_key_path.exists() {
-        bail!(
-            "Public key not found at {}",
-            pub_key_path.display()
-        );
+        bail!("Public key not found at {}", pub_key_path.display());
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -83,14 +80,16 @@ pub fn deploy_key(conn: &Connection, private_key_path: &PathBuf) -> Result<()> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn deploy_unix(conn: &Connection, pub_key_path: &PathBuf) -> Result<()> {
+fn deploy_unix(conn: &Connection, pub_key_path: &Path) -> Result<()> {
     // Check ssh-copy-id exists
     let check = Command::new("which").arg("ssh-copy-id").output();
     match check {
         Ok(output) if !output.status.success() => {
-            bail!("ssh-copy-id not found in PATH. Please install it (usually part of openssh-client).");
+            bail!(
+                "ssh-copy-id not found in PATH. Please install it (usually part of openssh-client)."
+            );
         }
-        Err(e) => bail!("Failed to check for ssh-copy-id: {}", e),
+        Err(e) => bail!("Failed to check for ssh-copy-id: {e}"),
         _ => {}
     }
 
@@ -107,7 +106,7 @@ fn deploy_unix(conn: &Connection, pub_key_path: &PathBuf) -> Result<()> {
     };
     cmd.arg(&target);
 
-    println!("Deploying public key to {}...\n", target);
+    println!("Deploying public key to {target}...\n");
 
     let status = cmd.status().context("Failed to run ssh-copy-id")?;
 
@@ -119,7 +118,7 @@ fn deploy_unix(conn: &Connection, pub_key_path: &PathBuf) -> Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn deploy_windows(conn: &Connection, pub_key_path: &PathBuf) -> Result<()> {
+fn deploy_windows(conn: &Connection, pub_key_path: &Path) -> Result<()> {
     let pub_key = std::fs::read_to_string(pub_key_path)
         .with_context(|| format!("Failed to read {}", pub_key_path.display()))?;
     let pub_key = pub_key.trim();
@@ -142,7 +141,9 @@ fn deploy_windows(conn: &Connection, pub_key_path: &PathBuf) -> Result<()> {
     }
     cmd.arg(&target).arg(&remote_cmd);
 
-    let status = cmd.status().context("Failed to run SSH for key deployment")?;
+    let status = cmd
+        .status()
+        .context("Failed to run SSH for key deployment")?;
 
     if !status.success() {
         bail!("Key deployment failed. Check your password and try again.");
@@ -155,15 +156,12 @@ fn deploy_windows(conn: &Connection, pub_key_path: &PathBuf) -> Result<()> {
 /// Returns the private key path on success.
 pub fn setup_key_auth(conn: &Connection) -> Result<KeySetupResult> {
     // Step 1: Find or generate key
-    let key_path = match find_existing_key() {
-        Some(path) => {
-            println!("Found existing SSH key: {}\n", path.display());
-            path
-        }
-        None => {
-            println!("No SSH key found. Let's create one.\n");
-            generate_key()?
-        }
+    let key_path = if let Some(path) = find_existing_key() {
+        println!("Found existing SSH key: {}\n", path.display());
+        path
+    } else {
+        println!("No SSH key found. Let's create one.\n");
+        generate_key()?
     };
 
     // Step 2: Deploy to server

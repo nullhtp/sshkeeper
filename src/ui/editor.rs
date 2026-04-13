@@ -1,25 +1,32 @@
 use crate::model::Connection;
 use chrono::Utc;
 use crossterm::event::{Event, KeyCode, KeyEvent};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::Frame;
-use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
+use tui_input::backend::crossterm::EventHandler;
 
 use super::app::EditorAction;
 use super::theme;
 
 const FIELD_LABELS: &[&str] = &[
-    "Name", "Host", "Port", "User", "Identity File", "Group", "Tags (comma-sep)", "Proxy Jump",
+    "Name",
+    "Host",
+    "Port",
+    "User",
+    "Identity File",
+    "Group",
+    "Tags (comma-sep)",
+    "Proxy Jump",
 ];
 const FIELD_COUNT: usize = 8;
 
 #[derive(Clone)]
 pub enum EditorMode {
     Add,
-    Edit(String), // connection id
+    Edit,
 }
 
 pub struct EditorState {
@@ -55,7 +62,7 @@ impl EditorState {
             Input::default().with_value(conn.proxy_jump.clone().unwrap_or_default()),
         ];
         Self {
-            mode: EditorMode::Edit(conn.id.clone()),
+            mode: EditorMode::Edit,
             fields,
             focused: 0,
             original_id: Some(conn.id),
@@ -66,7 +73,7 @@ impl EditorState {
     pub fn render(&self, frame: &mut Frame) {
         let title = match &self.mode {
             EditorMode::Add => " Add Connection ",
-            EditorMode::Edit(_) => " Edit Connection ",
+            EditorMode::Edit => " Edit Connection ",
         };
 
         let mut constraints: Vec<Constraint> = vec![Constraint::Length(1)]; // title
@@ -78,10 +85,7 @@ impl EditorState {
 
         let chunks = Layout::vertical(constraints).split(frame.area());
 
-        frame.render_widget(
-            Paragraph::new(title).style(theme::TITLE_STYLE),
-            chunks[0],
-        );
+        frame.render_widget(Paragraph::new(title).style(theme::TITLE_STYLE), chunks[0]);
 
         for (i, label) in FIELD_LABELS.iter().enumerate() {
             let style = if i == self.focused {
@@ -91,7 +95,7 @@ impl EditorState {
             };
             let block = Block::default().borders(Borders::NONE);
             let content = Line::from(vec![
-                Span::styled(format!("  {}: ", label), theme::HEADER_STYLE),
+                Span::styled(format!("  {label}: "), theme::HEADER_STYLE),
                 Span::styled(self.fields[i].value(), style),
                 if i == self.focused {
                     Span::styled("▏", style)
@@ -161,13 +165,13 @@ impl EditorState {
 
         // Preserve id and created_at for edits
         if let Some(ref id) = self.original_id {
-            conn.id = id.clone();
+            conn.id.clone_from(id);
         }
         if let Some(created) = self.original_created {
             conn.created_at = created;
         }
 
-        EditorAction::Save(conn)
+        EditorAction::Save(Box::new(conn))
     }
 }
 

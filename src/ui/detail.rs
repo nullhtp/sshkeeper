@@ -1,9 +1,9 @@
 use crate::model::ConnectionStore;
 use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::Frame;
 
 use super::app::DetailAction;
 use super::quick_actions::{ActionListResult, ActionListState, ParamFormResult, ParamFormState};
@@ -31,19 +31,16 @@ impl DetailState {
     }
 
     pub fn render(&mut self, frame: &mut Frame, store: &ConnectionStore) {
-        let conn = match store.find_by_id(&self.connection_id) {
-            Some(c) => c,
-            None => {
-                frame.render_widget(
-                    Paragraph::new("Connection not found.").style(theme::ERROR_STYLE),
-                    frame.area(),
-                );
-                return;
-            }
+        let Some(conn) = store.find_by_id(&self.connection_id) else {
+            frame.render_widget(
+                Paragraph::new("Connection not found.").style(theme::ERROR_STYLE),
+                frame.area(),
+            );
+            return;
         };
 
         let chunks = Layout::vertical([
-            Constraint::Length(1),  // title
+            Constraint::Length(1), // title
             Constraint::Min(1),    // details
             Constraint::Length(3), // SSH command
             Constraint::Length(1), // help
@@ -83,7 +80,7 @@ impl DetailState {
         if let Some(ref group) = conn.group {
             lines.push(Line::from(vec![
                 Span::styled("  Group:", theme::HEADER_STYLE),
-                Span::raw(format!(" {}", group)),
+                Span::raw(format!(" {group}")),
             ]));
         }
         if !conn.tags.is_empty() {
@@ -100,16 +97,13 @@ impl DetailState {
         }
         for (k, v) in &conn.ssh_options {
             lines.push(Line::from(vec![
-                Span::styled(format!("  -o {}=", k), theme::HEADER_STYLE),
+                Span::styled(format!("  -o {k}="), theme::HEADER_STYLE),
                 Span::raw(v),
             ]));
         }
 
         let detail_block = Block::default().borders(Borders::ALL);
-        frame.render_widget(
-            Paragraph::new(lines).block(detail_block),
-            chunks[1],
-        );
+        frame.render_widget(Paragraph::new(lines).block(detail_block), chunks[1]);
 
         // SSH command
         let cmd_block = Block::default()
@@ -128,10 +122,7 @@ impl DetailState {
         } else {
             " ESC: back | Enter: connect | e: edit | d: delete | t: transfer | K: setup key auth | a: actions"
         };
-        frame.render_widget(
-            Paragraph::new(help).style(theme::HINT_STYLE),
-            chunks[3],
-        );
+        frame.render_widget(Paragraph::new(help).style(theme::HINT_STYLE), chunks[3]);
 
         // Render overlay on top
         match &mut self.overlay {
@@ -192,12 +183,11 @@ impl DetailState {
 
         // Normal detail key handling
         if self.confirm_delete {
-            return match key.code {
-                KeyCode::Char('y') => DetailAction::Delete(self.connection_id.clone()),
-                _ => {
-                    self.confirm_delete = false;
-                    DetailAction::None
-                }
+            return if let KeyCode::Char('y') = key.code {
+                DetailAction::Delete(self.connection_id.clone())
+            } else {
+                self.confirm_delete = false;
+                DetailAction::None
             };
         }
 

@@ -1,11 +1,11 @@
 use crate::model::ConnectionStore;
 use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState};
-use ratatui::Frame;
-use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
+use tui_input::backend::crossterm::EventHandler;
 
 use super::app::BrowseAction;
 use super::theme;
@@ -32,7 +32,7 @@ impl BrowseState {
     pub fn render(&mut self, frame: &mut Frame, store: &ConnectionStore, status: Option<&str>) {
         let chunks = Layout::vertical([
             Constraint::Length(1), // title
-            Constraint::Min(1),   // list
+            Constraint::Min(1),    // list
             Constraint::Length(1), // status/search
             Constraint::Length(1), // help
         ])
@@ -70,7 +70,7 @@ impl BrowseState {
             frame.render_widget(Paragraph::new(search_line), chunks[2]);
         } else if let Some(msg) = status {
             frame.render_widget(
-                Paragraph::new(format!(" {}", msg)).style(theme::SUCCESS_STYLE),
+                Paragraph::new(format!(" {msg}")).style(theme::SUCCESS_STYLE),
                 chunks[2],
             );
         }
@@ -81,12 +81,10 @@ impl BrowseState {
         } else {
             " q: quit | a: add | i: import | /: search | Tab: group | Enter: view"
         };
-        frame.render_widget(
-            Paragraph::new(help).style(theme::HINT_STYLE),
-            chunks[3],
-        );
+        frame.render_widget(Paragraph::new(help).style(theme::HINT_STYLE), chunks[3]);
     }
 
+    #[allow(clippy::unused_self)]
     fn render_empty(&self, frame: &mut Frame, area: Rect, truly_empty: bool) {
         let msg = if truly_empty {
             "No connections yet.\n\nPress 'a' to add a connection or 'i' to import from ~/.ssh/config"
@@ -122,10 +120,10 @@ impl BrowseState {
                     Cell::from(format!(
                         "{}{}",
                         c.host,
-                        if c.port != 22 {
-                            format!(":{}", c.port)
-                        } else {
+                        if c.port == 22 {
                             String::new()
+                        } else {
+                            format!(":{}", c.port)
                         }
                     )),
                     Cell::from(c.group.as_deref().unwrap_or("-")),
@@ -165,19 +163,15 @@ impl BrowseState {
 
         for group in &groups {
             let group_name = group.as_deref().unwrap_or("(ungrouped)");
-            rows.push(
-                Row::new(vec![
-                    Cell::from(format!("▸ {}", group_name)).style(theme::GROUP_STYLE),
-                    Cell::from(""),
-                    Cell::from(""),
-                ])
-            );
+            rows.push(Row::new(vec![
+                Cell::from(format!("▸ {group_name}")).style(theme::GROUP_STYLE),
+                Cell::from(""),
+                Cell::from(""),
+            ]));
             flat_ids.push(String::new()); // group header placeholder
 
-            let group_conns: Vec<&&crate::model::Connection> = connections
-                .iter()
-                .filter(|c| c.group == *group)
-                .collect();
+            let group_conns: Vec<&&crate::model::Connection> =
+                connections.iter().filter(|c| c.group == *group).collect();
 
             for c in group_conns {
                 rows.push(Row::new(vec![
@@ -185,7 +179,11 @@ impl BrowseState {
                     Cell::from(format!(
                         "{}{}",
                         c.host,
-                        if c.port != 22 { format!(":{}", c.port) } else { String::new() }
+                        if c.port == 22 {
+                            String::new()
+                        } else {
+                            format!(":{}", c.port)
+                        }
                     )),
                     Cell::from(""),
                 ]));

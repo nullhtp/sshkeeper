@@ -18,16 +18,13 @@ pub fn ssh_config_path() -> PathBuf {
         .join("config")
 }
 
-pub fn import_ssh_config(
-    existing: &[Connection],
-) -> Result<ImportResult> {
+pub fn import_ssh_config(existing: &[Connection]) -> Result<ImportResult> {
     let path = ssh_config_path();
     if !path.exists() {
         anyhow::bail!("No SSH config found at {}", path.display());
     }
 
-    let file = File::open(&path)
-        .with_context(|| format!("Failed to open {}", path.display()))?;
+    let file = File::open(&path).with_context(|| format!("Failed to open {}", path.display()))?;
     let mut reader = BufReader::new(file);
     let config = SshConfig::default()
         .parse(&mut reader, ParseRule::ALLOW_UNKNOWN_FIELDS)
@@ -41,9 +38,8 @@ pub fn import_ssh_config(
 
     for host in config.get_hosts() {
         // Get the first pattern clause as the name
-        let first_clause = match host.pattern.first() {
-            Some(c) => c,
-            None => continue,
+        let Some(first_clause) = host.pattern.first() else {
+            continue;
         };
         let pattern = &first_clause.pattern;
 
@@ -54,17 +50,14 @@ pub fn import_ssh_config(
         }
 
         let params = config.query(pattern);
-        let hostname = params
-            .host_name
-            .clone()
-            .unwrap_or_else(|| pattern.clone());
+        let hostname = params.host_name.clone().unwrap_or_else(|| pattern.clone());
         let port = params.port.unwrap_or(22);
         let user = params.user.clone();
 
         // Check for duplicates
-        let is_dup = existing.iter().any(|c| {
-            c.host == hostname && c.user == user && c.port == port
-        });
+        let is_dup = existing
+            .iter()
+            .any(|c| c.host == hostname && c.user == user && c.port == port);
         if is_dup {
             result.skipped_duplicates.push(pattern.clone());
             continue;
@@ -74,7 +67,10 @@ pub fn import_ssh_config(
         conn.port = port;
         conn.user = user;
         conn.identity_file = params.identity_file.and_then(|files| {
-            files.into_iter().next().map(|p| p.to_string_lossy().to_string())
+            files
+                .into_iter()
+                .next()
+                .map(|p| p.to_string_lossy().to_string())
         });
 
         result.imported.push(conn);

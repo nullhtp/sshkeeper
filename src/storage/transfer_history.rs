@@ -36,14 +36,6 @@ impl TransferEntry {
             timestamp: Utc::now(),
         }
     }
-
-    pub fn transfer_direction(&self) -> TransferDirection {
-        if self.direction == "download" {
-            TransferDirection::Download
-        } else {
-            TransferDirection::Upload
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -76,14 +68,6 @@ impl TransferHistory {
         Ok(Self { path, data })
     }
 
-    pub fn entries_for(&self, connection_id: &str) -> &[TransferEntry] {
-        self.data
-            .connections
-            .get(connection_id)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
-    }
-
     pub fn push(&mut self, connection_id: &str, entry: TransferEntry) {
         let entries = self
             .data
@@ -97,13 +81,18 @@ impl TransferHistory {
     }
 
     pub fn save(&self) -> Result<()> {
-        let content = toml::to_string_pretty(&self.data)
-            .context("Failed to serialize transfer history")?;
+        let content =
+            toml::to_string_pretty(&self.data).context("Failed to serialize transfer history")?;
         let tmp_path = self.path.with_extension("toml.tmp");
         fs::write(&tmp_path, &content)
             .with_context(|| format!("Failed to write {}", tmp_path.display()))?;
-        fs::rename(&tmp_path, &self.path)
-            .with_context(|| format!("Failed to rename {} to {}", tmp_path.display(), self.path.display()))?;
+        fs::rename(&tmp_path, &self.path).with_context(|| {
+            format!(
+                "Failed to rename {} to {}",
+                tmp_path.display(),
+                self.path.display()
+            )
+        })?;
         Ok(())
     }
 }

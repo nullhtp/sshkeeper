@@ -1,12 +1,12 @@
 use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::Frame;
 use std::process::Command;
 
-use crate::model::Connection;
 use super::theme;
+use crate::model::Connection;
 
 const MAX_ENTRIES_PER_DIR: usize = 200;
 
@@ -75,12 +75,12 @@ impl RemoteFileTree {
         let root = if root == "~" || root.starts_with("~/") {
             match self.resolve_home() {
                 Some(home) if root == "~" => {
-                    self.current_root = home.clone();
+                    self.current_root.clone_from(&home);
                     home
                 }
                 Some(home) => {
                     let resolved = format!("{}/{}", home, &root[2..]);
-                    self.current_root = resolved.clone();
+                    self.current_root.clone_from(&resolved);
                     resolved
                 }
                 None => root.to_string(),
@@ -96,12 +96,12 @@ impl RemoteFileTree {
         } else {
             // Get parent path
             let trimmed = root.trim_end_matches('/');
-            let parent_path = match trimmed.rfind('/') {
-                Some(pos) if pos == 0 => Some("/".to_string()),
+
+            match trimmed.rfind('/') {
+                Some(0) => Some("/".to_string()),
                 Some(pos) => Some(trimmed[..pos].to_string()),
                 None => Some("~".to_string()),
-            };
-            parent_path
+            }
         };
 
         if let Some(parent_path) = parent {
@@ -118,7 +118,7 @@ impl RemoteFileTree {
             Ok(entries) => {
                 for (name, is_dir) in entries.into_iter().take(MAX_ENTRIES_PER_DIR) {
                     let path = if root == "/" {
-                        format!("/{}", name)
+                        format!("/{name}")
                     } else {
                         format!("{}/{}", root.trim_end_matches('/'), name)
                     };
@@ -142,17 +142,15 @@ impl RemoteFileTree {
         // For ~, use $HOME so the remote shell expands it (~ inside quotes is literal)
         let dir_expr = if dir == "~" {
             "$HOME".to_string()
-        } else if dir.starts_with("~/") {
-            format!("$HOME/{}", &dir[2..])
+        } else if let Some(rest) = dir.strip_prefix("~/") {
+            format!("$HOME/{rest}")
         } else {
             shell_escape(dir)
         };
-        let ls_cmd = format!("ls -1pa {}", dir_expr);
+        let ls_cmd = format!("ls -1pa {dir_expr}");
         let mut cmd = self.build_ssh_command(&ls_cmd);
 
-        let output = cmd
-            .output()
-            .map_err(|e| format!("SSH failed: {}", e))?;
+        let output = cmd.output().map_err(|e| format!("SSH failed: {e}"))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -210,7 +208,7 @@ impl RemoteFileTree {
             cmd.arg("-J").arg(jump);
         }
         for (key, val) in &self.conn.ssh_options {
-            cmd.arg("-o").arg(format!("{}={}", key, val));
+            cmd.arg("-o").arg(format!("{key}={val}"));
         }
         cmd.arg(&self.conn.host);
         cmd.arg(remote_cmd);
@@ -425,7 +423,7 @@ impl RemoteFileTree {
 
         if let Some(ref err) = self.loading_error {
             frame.render_widget(
-                Paragraph::new(format!("  Error: {}", err)).style(theme::ERROR_STYLE),
+                Paragraph::new(format!("  Error: {err}")).style(theme::ERROR_STYLE),
                 inner,
             );
             return;
@@ -489,7 +487,14 @@ impl RemoteFileTree {
 
                 Line::from(vec![
                     Span::styled(indent, theme::DIM_STYLE),
-                    Span::styled(icon, if node.is_dir { theme::TREE_DIR_STYLE } else { theme::DIM_STYLE }),
+                    Span::styled(
+                        icon,
+                        if node.is_dir {
+                            theme::TREE_DIR_STYLE
+                        } else {
+                            theme::DIM_STYLE
+                        },
+                    ),
                     Span::styled(&node.name, name_style),
                 ])
             })

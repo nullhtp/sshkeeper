@@ -1,15 +1,15 @@
 use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
 use std::path::PathBuf;
 
-use crate::model::Connection;
-use crate::ssh::transfer::TransferDirection;
 use super::file_tree::{FileTree, FileTreeAction};
 use super::remote_file_tree::{RemoteFileTree, RemoteTreeAction};
 use super::theme;
+use crate::model::Connection;
+use crate::ssh::transfer::TransferDirection;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
@@ -46,7 +46,7 @@ impl TransferScreen {
 
     pub fn render(&self, frame: &mut Frame) {
         let chunks = Layout::vertical([
-            Constraint::Length(1),  // title
+            Constraint::Length(1), // title
             Constraint::Min(1),    // trees
             Constraint::Length(3), // status bar
             Constraint::Length(1), // help
@@ -64,7 +64,7 @@ impl TransferScreen {
                     format!(" Transfer: {} ", self.connection_name),
                     theme::TITLE_STYLE,
                 ),
-                Span::styled(format!("  [{}]", dir_indicator), theme::ACTIVE_TAB_STYLE),
+                Span::styled(format!("  [{dir_indicator}]"), theme::ACTIVE_TAB_STYLE),
                 if self.recursive {
                     Span::styled("  [recursive]", theme::TOGGLE_ON_STYLE)
                 } else {
@@ -75,11 +75,8 @@ impl TransferScreen {
         );
 
         // Two tree panes side by side
-        let trees = Layout::horizontal([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .split(chunks[1]);
+        let trees = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(chunks[1]);
 
         self.local_tree
             .render(frame, trees[0], self.focused_pane == Pane::Local);
@@ -90,27 +87,27 @@ impl TransferScreen {
         let local_display = self
             .local_path
             .as_ref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| "(none)".into());
-        let remote_display = self
-            .remote_path
-            .as_deref()
-            .unwrap_or("(none)");
+            .map_or_else(|| "(none)".into(), |p| p.to_string_lossy().to_string());
+        let remote_display = self.remote_path.as_deref().unwrap_or("(none)");
 
         let (src_label, dst_label, src_path, dst_path) = match self.direction {
-            TransferDirection::Upload => ("Local", "Remote", local_display.as_str(), remote_display),
-            TransferDirection::Download => ("Remote", "Local", remote_display, local_display.as_str()),
+            TransferDirection::Upload => {
+                ("Local", "Remote", local_display.as_str(), remote_display)
+            }
+            TransferDirection::Download => {
+                ("Remote", "Local", remote_display, local_display.as_str())
+            }
         };
 
         let status_lines = vec![
             Line::from(vec![
                 Span::styled("  Source: ", theme::FIELD_LABEL_STYLE),
-                Span::styled(format!("[{}] ", src_label), theme::DIM_STYLE),
+                Span::styled(format!("[{src_label}] "), theme::DIM_STYLE),
                 Span::styled(src_path, theme::FIELD_VALUE_STYLE),
             ]),
             Line::from(vec![
                 Span::styled("  Dest:   ", theme::FIELD_LABEL_STYLE),
-                Span::styled(format!("[{}] ", dst_label), theme::DIM_STYLE),
+                Span::styled(format!("[{dst_label}] "), theme::DIM_STYLE),
                 Span::styled(dst_path, theme::FIELD_VALUE_STYLE),
             ]),
         ];
@@ -123,10 +120,7 @@ impl TransferScreen {
         } else {
             " Tab: switch pane | Space: select | d: direction | r: recursive | Enter: transfer | Esc: back"
         };
-        frame.render_widget(
-            Paragraph::new(help).style(theme::HINT_STYLE),
-            chunks[3],
-        );
+        frame.render_widget(Paragraph::new(help).style(theme::HINT_STYLE), chunks[3]);
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> TransferAction {

@@ -1,15 +1,15 @@
 use crate::model::Connection;
 use crate::ssh::actions::{
-    build_actions, build_ssh_command, ActionCategory, ActionParam, ParamType, QuickAction,
+    ActionCategory, ActionParam, ParamType, QuickAction, build_actions, build_ssh_command,
 };
 use crossterm::event::{Event, KeyCode, KeyEvent};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
 use std::sync::mpsc;
-use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
+use tui_input::backend::crossterm::EventHandler;
 
 use super::theme;
 
@@ -40,7 +40,7 @@ pub struct ActionListState {
     // Filtered view
     filtered_entries: Vec<ListEntry>,
     filtered_selectable: Vec<usize>, // indices into filtered_entries that are actions
-    selected: usize, // index into filtered_selectable
+    selected: usize,                 // index into filtered_selectable
     list_state: ListState,
 }
 
@@ -88,10 +88,10 @@ impl ActionListState {
 
         // Reset selection
         self.selected = 0;
-        if !self.filtered_selectable.is_empty() {
-            self.list_state.select(Some(self.filtered_selectable[0]));
-        } else {
+        if self.filtered_selectable.is_empty() {
             self.list_state.select(None);
+        } else {
+            self.list_state.select(Some(self.filtered_selectable[0]));
         }
     }
 
@@ -99,16 +99,14 @@ impl ActionListState {
         let area = centered_rect(60, 80, frame.area());
         frame.render_widget(Clear, area);
 
-        let block = Block::default().borders(Borders::ALL).title(" Quick Actions ");
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Quick Actions ");
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
         // Split inner into: search bar (2 lines) + list
-        let chunks = Layout::vertical([
-            Constraint::Length(2),
-            Constraint::Min(1),
-        ])
-        .split(inner);
+        let chunks = Layout::vertical([Constraint::Length(2), Constraint::Min(1)]).split(inner);
 
         // Search bar
         let search_line = Line::from(vec![
@@ -131,12 +129,10 @@ impl ActionListState {
             .filtered_entries
             .iter()
             .map(|entry| match entry {
-                ListEntry::CategoryHeader(cat) => {
-                    ListItem::new(Line::from(Span::styled(
-                        format!("  {} ", cat.label()),
-                        theme::GROUP_STYLE,
-                    )))
-                }
+                ListEntry::CategoryHeader(cat) => ListItem::new(Line::from(Span::styled(
+                    format!("  {} ", cat.label()),
+                    theme::GROUP_STYLE,
+                ))),
                 ListEntry::Action(idx) => {
                     let a = &self.actions[*idx];
                     ListItem::new(Line::from(vec![
@@ -155,12 +151,12 @@ impl ActionListState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ActionListResult {
         match key.code {
             KeyCode::Esc => {
-                if !self.search.value().is_empty() {
+                if self.search.value().is_empty() {
+                    ActionListResult::Dismiss
+                } else {
                     self.search = Input::default();
                     self.rebuild_filtered();
                     ActionListResult::None
-                } else {
-                    ActionListResult::Dismiss
                 }
             }
             KeyCode::Down => {
@@ -222,7 +218,7 @@ enum FieldKind {
     Confirm(bool),
 }
 
-/// focused index: 0..fields.len() = fields, fields.len() = submit button
+/// focused index: `0..fields.len()` = fields, `fields.len()` = submit button
 pub struct ParamFormState {
     action: QuickAction,
     fields: Vec<FieldState>,
@@ -255,23 +251,21 @@ impl ParamFormState {
                     ParamType::Select { fetch_command } => {
                         let (tx, rx) = mpsc::channel();
                         let mut cmd = build_ssh_command(conn, fetch_command);
-                        std::thread::spawn(move || {
-                            match cmd.output() {
-                                Ok(output) if output.status.success() => {
-                                    let lines: Vec<String> = String::from_utf8_lossy(&output.stdout)
-                                        .lines()
-                                        .filter(|l| !l.trim().is_empty())
-                                        .map(|l| l.trim().to_string())
-                                        .collect();
-                                    let _ = tx.send(lines);
-                                }
-                                Ok(output) => {
-                                    let err = String::from_utf8_lossy(&output.stderr).to_string();
-                                    let _ = tx.send(vec![format!("ERROR: {}", err)]);
-                                }
-                                Err(e) => {
-                                    let _ = tx.send(vec![format!("ERROR: {}", e)]);
-                                }
+                        std::thread::spawn(move || match cmd.output() {
+                            Ok(output) if output.status.success() => {
+                                let lines: Vec<String> = String::from_utf8_lossy(&output.stdout)
+                                    .lines()
+                                    .filter(|l| !l.trim().is_empty())
+                                    .map(|l| l.trim().to_string())
+                                    .collect();
+                                let _ = tx.send(lines);
+                            }
+                            Ok(output) => {
+                                let err = String::from_utf8_lossy(&output.stderr).to_string();
+                                let _ = tx.send(vec![format!("ERROR: {}", err)]);
+                            }
+                            Err(e) => {
+                                let _ = tx.send(vec![format!("ERROR: {}", e)]);
                             }
                         });
                         FieldKind::Select {
@@ -305,7 +299,10 @@ impl ParamFormState {
     /// Poll select fields for loaded data. Call this each render cycle.
     pub fn poll_selects(&mut self) {
         for field in &mut self.fields {
-            if let FieldKind::Select { state, filtered, .. } = &mut field.kind {
+            if let FieldKind::Select {
+                state, filtered, ..
+            } = &mut field.kind
+            {
                 if let SelectState::Loading(rx) = state {
                     if let Ok(options) = rx.try_recv() {
                         if options.len() == 1 && options[0].starts_with("ERROR:") {
@@ -320,6 +317,7 @@ impl ParamFormState {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn render(&mut self, frame: &mut Frame) {
         self.poll_selects();
 
@@ -346,7 +344,11 @@ impl ParamFormState {
         let mut content_height: u16 = 2; // title + blank line
         for field in &self.fields {
             match &field.kind {
-                FieldKind::Select { expanded: true, filtered, .. } => {
+                FieldKind::Select {
+                    expanded: true,
+                    filtered,
+                    ..
+                } => {
                     content_height += (filtered.len() as u16).min(10) + 3;
                 }
                 _ => content_height += 2,
@@ -357,8 +359,12 @@ impl ParamFormState {
         content_height += 2; // border top + bottom
 
         // Clamp popup size
-        let popup_height = content_height.min(full_area.height.saturating_sub(4)).max(8);
-        let popup_width = (full_area.width * 70 / 100).max(40).min(full_area.width.saturating_sub(4));
+        let popup_height = content_height
+            .min(full_area.height.saturating_sub(4))
+            .max(8);
+        let popup_width = (full_area.width * 70 / 100)
+            .max(40)
+            .min(full_area.width.saturating_sub(4));
 
         let popup = Rect {
             x: (full_area.width.saturating_sub(popup_width)) / 2,
@@ -380,7 +386,11 @@ impl ParamFormState {
         let mut constraints = vec![Constraint::Length(1)]; // title description
         for field in &self.fields {
             match &field.kind {
-                FieldKind::Select { expanded: true, filtered, .. } => {
+                FieldKind::Select {
+                    expanded: true,
+                    filtered,
+                    ..
+                } => {
                     constraints.push(Constraint::Length((filtered.len() as u16).min(10) + 3));
                 }
                 _ => constraints.push(Constraint::Length(2)),
@@ -394,8 +404,7 @@ impl ParamFormState {
 
         // Description line
         frame.render_widget(
-            Paragraph::new(format!(" {}", self.action.description))
-                .style(theme::DIM_STYLE),
+            Paragraph::new(format!(" {}", self.action.description)).style(theme::DIM_STYLE),
             chunks[0],
         );
 
@@ -429,10 +438,8 @@ impl ParamFormState {
                     search,
                     filtered,
                 } => {
-                    let label = Span::styled(
-                        format!("  {}: ", field.param.label),
-                        theme::HEADER_STYLE,
-                    );
+                    let label =
+                        Span::styled(format!("  {}: ", field.param.label), theme::HEADER_STYLE);
                     match state {
                         SelectState::Loading(_) => {
                             let content = Line::from(vec![
@@ -467,7 +474,9 @@ impl ParamFormState {
                                 } else {
                                     0
                                 };
-                                for (j, &opt_idx) in filtered.iter().enumerate().skip(start).take(visible_count) {
+                                for (j, &opt_idx) in
+                                    filtered.iter().enumerate().skip(start).take(visible_count)
+                                {
                                     let style = if j == *selected {
                                         theme::SELECTED_STYLE
                                     } else {
@@ -490,8 +499,7 @@ impl ParamFormState {
                                 let display_val = filtered
                                     .get(*selected)
                                     .and_then(|&idx| options.get(idx))
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("(none)");
+                                    .map_or("(none)", std::string::String::as_str);
                                 let style = if is_focused {
                                     theme::SELECTED_STYLE
                                 } else {
@@ -501,7 +509,11 @@ impl ParamFormState {
                                     label,
                                     Span::styled(display_val, style),
                                     Span::styled(
-                                        if is_focused { " ▼ (Enter to expand)" } else { "" },
+                                        if is_focused {
+                                            " ▼ (Enter to expand)"
+                                        } else {
+                                            ""
+                                        },
                                         theme::DIM_STYLE,
                                     ),
                                 ]);
@@ -554,19 +566,17 @@ impl ParamFormState {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn handle_key(&mut self, key: KeyEvent) -> ParamFormResult {
         // Confirm dialog handling
         if self.confirm_shown {
-            return match key.code {
-                KeyCode::Char('y') => {
-                    self.confirmed = true;
-                    self.confirm_shown = false;
-                    self.try_submit()
-                }
-                _ => {
-                    self.confirm_shown = false;
-                    ParamFormResult::None
-                }
+            return if let KeyCode::Char('y') = key.code {
+                self.confirmed = true;
+                self.confirm_shown = false;
+                self.try_submit()
+            } else {
+                self.confirm_shown = false;
+                ParamFormResult::None
             };
         }
 
@@ -599,12 +609,12 @@ impl ParamFormState {
                             return ParamFormResult::None;
                         }
                         KeyCode::Esc => {
-                            if !search.value().is_empty() {
+                            if search.value().is_empty() {
+                                *expanded = false;
+                            } else {
                                 *search = Input::default();
                                 *filtered = (0..options.len()).collect();
                                 *selected = 0;
-                            } else {
-                                *expanded = false;
                             }
                             return ParamFormResult::None;
                         }
@@ -675,7 +685,7 @@ impl ParamFormState {
                             KeyCode::Char('n') => *val = false,
                             _ => {}
                         },
-                        _ => {}
+                        FieldKind::Select { .. } => {}
                     }
                 }
                 ParamFormResult::None
@@ -714,10 +724,8 @@ impl ParamFormState {
                     .and_then(|&idx| options.get(idx))
                     .cloned()
                     .unwrap_or_default(),
-                FieldKind::Confirm(v) => {
-                    if *v { "yes" } else { "no" }.to_string()
-                }
-                _ => String::new(),
+                FieldKind::Confirm(v) => if *v { "yes" } else { "no" }.to_string(),
+                FieldKind::Select { .. } => String::new(),
             };
             values.push((field.param.key.to_string(), val));
         }
