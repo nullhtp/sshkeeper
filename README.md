@@ -70,7 +70,7 @@ sshkeeper
 
 ## Configuration
 
-Connections are stored in `~/.config/sshkeeper/connections.toml`.
+Connections are stored in `~/.sshkeeper/connections.toml`.
 
 ## License
 

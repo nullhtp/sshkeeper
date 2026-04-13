@@ -1,15 +1,19 @@
 ## ADDED Requirements
 
 ### Requirement: Storage location
-The system SHALL store connection profiles in a `connections.toml` file inside the platform-appropriate config directory (`~/.config/sshkeeper/` on Linux, `~/Library/Application Support/sshkeeper/` on macOS, `%APPDATA%\sshkeeper\` on Windows).
+The system SHALL store all config files (`connections.toml`, `transfer_history.toml`) in `~/.sshkeeper/` on all platforms, using `dirs::home_dir()` to resolve the home directory.
 
-#### Scenario: First run on Linux
-- **WHEN** the app runs for the first time on Linux with no existing config
-- **THEN** the system SHALL create `~/.config/sshkeeper/connections.toml` with an empty connections table
+#### Scenario: First run with no existing config
+- **WHEN** the app runs for the first time with no existing config anywhere
+- **THEN** the system SHALL create `~/.sshkeeper/connections.toml` with an empty connections table
 
-#### Scenario: First run on macOS
-- **WHEN** the app runs for the first time on macOS with no existing config
-- **THEN** the system SHALL create `~/Library/Application Support/sshkeeper/connections.toml`
+#### Scenario: Migration from old location
+- **WHEN** the app runs and `~/.sshkeeper/` does not contain a config file but the old platform-specific config directory does
+- **THEN** the system SHALL copy the file from the old location to `~/.sshkeeper/` without deleting the original
+
+#### Scenario: Both locations have files
+- **WHEN** config files exist in both `~/.sshkeeper/` and the old platform-specific location
+- **THEN** the system SHALL use the `~/.sshkeeper/` files and ignore the old location
 
 ### Requirement: Load connections on startup
 The system SHALL load all connection profiles from the TOML storage file on startup.

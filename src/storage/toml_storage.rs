@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
+use super::{config_dir, migrate_file};
+
 #[derive(Debug, Serialize, Deserialize)]
 struct StorageFile {
     #[serde(default)]
@@ -17,17 +19,10 @@ pub struct TomlStorage {
 
 impl TomlStorage {
     pub fn new() -> Result<Self> {
-        let config_dir = dirs::config_dir()
-            .context("Could not determine config directory")?
-            .join("sshkeeper");
-        fs::create_dir_all(&config_dir).with_context(|| {
-            format!(
-                "Failed to create config directory: {}",
-                config_dir.display()
-            )
-        })?;
+        migrate_file("connections.toml");
+        let dir = config_dir()?;
         Ok(Self {
-            path: config_dir.join("connections.toml"),
+            path: dir.join("connections.toml"),
         })
     }
 

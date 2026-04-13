@@ -51,11 +51,9 @@ pub struct TransferHistory {
 
 impl TransferHistory {
     pub fn load() -> Result<Self> {
-        let config_dir = dirs::config_dir()
-            .context("Could not determine config directory")?
-            .join("sshkeeper");
-        fs::create_dir_all(&config_dir)?;
-        let path = config_dir.join("transfer_history.toml");
+        super::migrate_file("transfer_history.toml");
+        let dir = super::config_dir()?;
+        let path = dir.join("transfer_history.toml");
 
         let data = if path.exists() {
             let content = fs::read_to_string(&path)
