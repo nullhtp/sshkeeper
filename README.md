@@ -13,11 +13,20 @@ A cross-platform TUI for managing SSH connections.
 
 ## Install
 
+### Homebrew (macOS/Linux)
+
 ```sh
-cargo install --path .
+brew tap nullhtp/tap
+brew install sshkeeper
 ```
 
-Or build from source:
+### From source
+
+```sh
+cargo install --git https://github.com/nullhtp/sshkeeper.git
+```
+
+Or clone and build:
 
 ```sh
 git clone https://github.com/nullhtp/sshkeeper.git
