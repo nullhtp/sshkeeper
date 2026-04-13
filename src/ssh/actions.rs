@@ -8,6 +8,7 @@ pub enum ActionCategory {
     Network,
     Logs,
     Maintenance,
+    Docker,
 }
 
 impl ActionCategory {
@@ -18,6 +19,7 @@ impl ActionCategory {
             Self::Network => "Network",
             Self::Logs => "Logs",
             Self::Maintenance => "Maintenance",
+            Self::Docker => "Docker",
         }
     }
 }
@@ -305,6 +307,74 @@ pub fn build_actions() -> Vec<QuickAction> {
             command_template: "sudo reboot",
             params: vec![],
             confirm_message: Some("This will REBOOT the server. Are you sure?"),
+        },
+        // === Docker ===
+        QuickAction {
+            name: "List Running Containers",
+            category: ActionCategory::Docker,
+            description: "Show all running Docker containers",
+            command_template: "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'",
+            params: vec![],
+            confirm_message: None,
+        },
+        QuickAction {
+            name: "Container Logs",
+            category: ActionCategory::Docker,
+            description: "View recent logs of a Docker container",
+            command_template: "docker logs --tail {lines} {container}",
+            params: vec![
+                ActionParam {
+                    key: "container",
+                    label: "Container",
+                    param_type: ParamType::Select {
+                        fetch_command: "docker ps --format '{{.Names}}'",
+                    },
+                },
+                ActionParam {
+                    key: "lines",
+                    label: "Lines",
+                    param_type: ParamType::Text { default: "100" },
+                },
+            ],
+            confirm_message: None,
+        },
+        QuickAction {
+            name: "Restart Container",
+            category: ActionCategory::Docker,
+            description: "Restart a running Docker container",
+            command_template: "docker restart {container}",
+            params: vec![ActionParam {
+                key: "container",
+                label: "Container",
+                param_type: ParamType::Select {
+                    fetch_command: "docker ps --format '{{.Names}}'",
+                },
+            }],
+            confirm_message: None,
+        },
+        QuickAction {
+            name: "Docker Disk Usage",
+            category: ActionCategory::Docker,
+            description: "Show Docker disk space usage",
+            command_template: "docker system df",
+            params: vec![],
+            confirm_message: None,
+        },
+        QuickAction {
+            name: "Stop All Containers",
+            category: ActionCategory::Docker,
+            description: "Stop all running Docker containers",
+            command_template: "docker stop $(docker ps -q)",
+            params: vec![],
+            confirm_message: Some("This will STOP ALL running containers. Are you sure?"),
+        },
+        QuickAction {
+            name: "Prune Unused Images",
+            category: ActionCategory::Docker,
+            description: "Remove all unused Docker images to free space",
+            command_template: "docker image prune -af",
+            params: vec![],
+            confirm_message: Some("This will remove ALL unused Docker images. Are you sure?"),
         },
     ]
 }
